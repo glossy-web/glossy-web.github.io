@@ -1,0 +1,32 @@
+{
+  "name": "glossy-web",
+  "version": "2.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vue-tsc -b && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@ts-evtx/core": "^1.1.1",
+    "bootstrap": "^5.3.3",
+    "datatables.net": "^2.2.2",
+    "datatables.net-buttons": "^3.2.2",
+    "datatables.net-responsive": "^3.0.4",
+    "datatables.net-select": "^3.0.0",
+    "dayjs": "^1.11.13",
+    "echarts": "^5.5.1",
+    "jszip": "^3.10.1",
+    "sweetalert2": "^11.14.5",
+    "vue": "^3.5.13",
+    "vue-router": "^4.5.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^5.2.1",
+    "sass": "^1.83.4",
+    "typescript": "~5.6.3",
+    "vite": "^6.0.5",
+    "vue-tsc": "^2.2.0"
+  }
+}
