@@ -4,9 +4,7 @@ import { resolve } from 'path';
 
 export default defineConfig({
   base: '/',
-  define: {
-    'process.env': '{}',
-  },
+  define: { 'process.env': '{}' },
   plugins: [vue()],
   resolve: {
     alias: {
@@ -17,7 +15,6 @@ export default defineConfig({
   },
   build: {
     outDir: 'docs',
-    minify: false,
     cssCodeSplit: false,
     modulePreload: false,
     rollupOptions: {

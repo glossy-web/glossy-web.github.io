@@ -89,8 +89,8 @@ export default defineComponent({
     const activePlugin = ref('__index');
     const fileInputEl = ref<HTMLInputElement | null>(null);
 
-    const totalEventCount = computed(() => eventStore.getAllEvents().length);
-    const statistics = computed(() => eventStore.getStatistics());
+    const totalEventCount = computed(() => { eventStore.version.value; return eventStore.getAllEvents().length; });
+    const statistics = computed(() => { eventStore.version.value; return eventStore.getStatistics(); });
 
     function triggerFileInput() {
       fileInputEl.value?.click();

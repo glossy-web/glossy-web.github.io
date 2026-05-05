@@ -1,4 +1,5 @@
 import type { EvtxEvent, EventFilter } from './evtx/types';
+import { ref } from 'vue';
 
 export interface EventSource {
   id: string;
@@ -12,6 +13,9 @@ class EventStore {
   private sources: Map<string, EventSource> = new Map();
   private eventList: EvtxEvent[] = [];
   private nextId = 0;
+  version = ref(0);
+
+  private bump() { this.version.value++; }
 
   addSource(name: string, parsed: { events: EvtxEvent[]; errors: string[] }): string {
     const id = `src_${this.sources.size}`;
@@ -29,6 +33,7 @@ class EventStore {
     }
 
     this.sources.set(id, source);
+    this.bump();
     return id;
   }
 
@@ -48,6 +53,7 @@ class EventStore {
     }
     this.eventList = this.eventList.filter(e => !toRemove.has(e.id));
     this.sources.delete(id);
+    this.bump();
   }
 
   reset(): void {
@@ -55,6 +61,7 @@ class EventStore {
     this.sources.clear();
     this.eventList = [];
     this.nextId = 0;
+    this.bump();
   }
 
   getEvent(id: number): EvtxEvent | undefined {
@@ -76,38 +83,30 @@ class EventStore {
       const pSet = new Set(filter.providers);
       results = results.filter(e => pSet.has(e.provider));
     }
-
     if (filter.eventIds && filter.eventIds.length > 0) {
       const eidSet = new Set(filter.eventIds);
       results = results.filter(e => eidSet.has(e.eventId));
     }
-
     if (filter.channels && filter.channels.length > 0) {
       const chSet = new Set(filter.channels);
       results = results.filter(e => chSet.has(e.channel));
     }
-
     if (filter.computers && filter.computers.length > 0) {
       const compSet = new Set(filter.computers);
       results = results.filter(e => compSet.has(e.computer));
     }
-
     if (filter.levelMin != null) {
       results = results.filter(e => e.level >= filter.levelMin!);
     }
-
     if (filter.levelMax != null) {
       results = results.filter(e => e.level <= filter.levelMax!);
     }
-
     if (filter.since) {
       results = results.filter(e => e.timestamp >= filter.since!);
     }
-
     if (filter.until) {
       results = results.filter(e => e.timestamp <= filter.until!);
     }
-
     if (filter.textSearch) {
       const q = filter.textSearch.toLowerCase();
       results = results.filter(e =>
@@ -121,15 +120,7 @@ class EventStore {
     return results;
   }
 
-  getStatistics(): {
-    totalEvents: number;
-    sourceCount: number;
-    providers: Array<{ name: string; count: number }>;
-    eventIds: Array<{ id: number; count: number }>;
-    computers: Array<{ name: string; count: number }>;
-    channels: Array<{ name: string; count: number }>;
-    timeRange: { earliest: Date | null; latest: Date | null };
-  } {
+  getStatistics() {
     const providerMap = new Map<string, number>();
     const eventIdMap = new Map<number, number>();
     const computerMap = new Map<string, number>();

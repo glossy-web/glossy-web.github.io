@@ -69,6 +69,7 @@ export default defineComponent({
     const events = computed<EvtxEvent[]>(() => {
       const p = plugin.value;
       const filter = p.getFilters();
+      eventStore.version.value;
       const raw = eventStore.query(filter);
       return p.processEvents(raw);
     });
