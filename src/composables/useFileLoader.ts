@@ -34,31 +34,8 @@ function buildEvent(rec: AnyRec, sourceFile: string, globalId: number): EvtxEven
     const ts = (rec as unknown as { timestampAsDate: () => Date }).timestampAsDate();
     const rn = (rec as unknown as { recordNum: () => bigint }).recordNum();
 
-    // Primary: use renderXml()
     let xml = '';
     try { xml = (rec as unknown as { renderXml: () => string }).renderXml(); } catch {}
-
-    // Fallback: render via TemplateInstance directly from root.children
-    if (!xml || xml === '<Event/>') {
-      try {
-        const root = (rec as unknown as { root: () => AnyRec }).root();
-        if (root) {
-          const children = (root as AnyRec).children as Array<AnyRec> | undefined;
-          if (children) {
-            for (const child of children) {
-              if ((child as AnyRec).token === 12) {
-                const ti = child as unknown as {
-                  renderXml: (subs: unknown[]) => string;
-                };
-                const subs = ((root as AnyRec).substitutions as unknown[]) || [];
-                xml = ti.renderXml(subs);
-                break;
-              }
-            }
-          }
-        }
-      } catch {}
-    }
 
     const fields = parseXmlFields(xml);
     const level = (fields.level as number) ?? 0;
