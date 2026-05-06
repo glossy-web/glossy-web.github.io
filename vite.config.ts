@@ -13,6 +13,9 @@ export default defineConfig({
       '@ts-evtx/messages': resolve(__dirname, 'src/stubs/ts-evtx-messages.ts'),
     },
   },
+  esbuild: {
+    keepNames: true,
+  },
   build: {
     outDir: 'docs',
     cssCodeSplit: false,
