@@ -17,7 +17,7 @@ A browser port of [Glossy](https://github.com/whatabeautifulmemory/glossy) (KDFS
 
 - SHA-256 per file; a file loaded twice is skipped, and records already loaded from another copy (shadow copies, archives) are not added twice.
 - Gaps in each file's record numbering, records whose time runs backwards, and dirty/full headers are listed in the overview.
-- Times are shown in the analyst's system time zone by default, with any IANA zone (including UTC) selectable; the zone is named everywhere it applies. CSV exports use ISO 8601 with the offset and include channel, provider, event ID, record ID and source file for every row. Cells that a spreadsheet would run as a formula are prefixed with `'`.
+- Times are shown in the analyst's system time zone by default, with any IANA zone (including UTC) selectable. Every time carries its UTC offset (`2024-05-01 09:30:05.123 +09:00`), which stays correct across daylight saving changes. CSV exports use ISO 8601 with the offset and include channel, provider, event ID, record ID and source file for every row. Cells that a spreadsheet would run as a formula are prefixed with `'`.
 - Every table also exports [Timesketch](https://timesketch.org/) JSONL: `message`, `datetime` (UTC), `timestamp_desc` and `timestamp` (µs), the visible columns as snake_case fields, and the record's trace under plaso's EVTX field names (`computer_name`, `source_name`, `event_identifier`, `record_number`, plus `channel` and `evtx_file`).
 - A coverage panel shows which of the key logs are loaded and which are disabled by default on Windows, so absent logs are not read as absent activity.
 

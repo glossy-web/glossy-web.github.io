@@ -19,7 +19,7 @@ export function summarize(e: EvtxEvent, max = 6): string {
 }
 
 const columns: Column<EvtxEvent>[] = [
-  { id: 'time', label: 'Time', kind: 'time', value: e => e.ts, size: 190 },
+  { id: 'time', label: 'Time', kind: 'time', value: e => e.ts, size: 230 },
   { id: 'level', label: 'Level', value: e => levelName(e.level), size: 100, facet: true, tone: e => (e.level === 1 || e.level === 2 ? 'danger' : e.level === 3 ? 'warning' : undefined) },
   { id: 'channel', label: 'Channel', value: e => e.channel, size: 200, facet: true },
   { id: 'provider', label: 'Provider', value: e => e.provider, size: 240, facet: true },

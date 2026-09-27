@@ -98,7 +98,7 @@ interface SessionRow extends EventRow {
 }
 
 const sessionColumns: Column<SessionRow>[] = withBase<SessionRow>([
-  { id: 'end', label: 'Shutdown', kind: 'time', value: r => r.end, size: 190 },
+  { id: 'end', label: 'Shutdown', kind: 'time', value: r => r.end, size: 230 },
   { id: 'uptime', label: 'Uptime', kind: 'number', value: r => r.end - r.event.ts, text: r => (Number.isFinite(r.end) ? formatDuration(r.end - r.event.ts) : ''), size: 130 },
   text('how', 'Ended', r => r.how, { size: 250, facet: true, tone: r => (r.how.startsWith('Unexpected') ? 'danger' : undefined) }),
   text('safe', 'Safe mode', r => (r.safeMode ? 'Yes' : ''), { size: 90, facet: true }),

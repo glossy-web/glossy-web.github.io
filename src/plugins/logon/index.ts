@@ -118,7 +118,7 @@ interface SessionRow extends EventRow {
 }
 
 const sessionColumns: Column<SessionRow>[] = withBase<SessionRow>([
-  { id: 'end', label: 'Logoff', kind: 'time', value: r => r.end?.ts ?? NaN, size: 190 },
+  { id: 'end', label: 'Logoff', kind: 'time', value: r => r.end?.ts ?? NaN, size: 230 },
   { id: 'duration', label: 'Duration', kind: 'number', value: r => (r.end ? r.end.ts - r.event.ts : NaN), text: r => (r.end ? formatDuration(r.end.ts - r.event.ts) : 'no logoff recorded'), size: 140 },
   text('user', 'Account', r => r.user, { size: 200 }),
   text('logonType', 'Logon type', r => r.logonType, { size: 150, facet: true }),
@@ -142,8 +142,8 @@ const failureColumns: Column<FailureRow>[] = [
   text('source', 'Source IP / workstation', r => r.source, { size: 200 }),
   text('user', 'Account', r => r.user, { size: 200 }),
   { id: 'count', label: 'Failures', kind: 'number', value: r => r.count, size: 90, tone: r => (r.count >= 10 ? 'danger' : undefined) },
-  { id: 'first', label: 'First', kind: 'time', value: r => r.first, size: 190 },
-  { id: 'last', label: 'Last', kind: 'time', value: r => r.last, size: 190 },
+  { id: 'first', label: 'First', kind: 'time', value: r => r.first, size: 230 },
+  { id: 'last', label: 'Last', kind: 'time', value: r => r.last, size: 230 },
   text('reasons', 'Reasons', r => r.reasons, { size: 320 }),
   text('types', 'Logon types', r => r.types, { size: 160 }),
 ];

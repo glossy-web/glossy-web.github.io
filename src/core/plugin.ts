@@ -136,7 +136,7 @@ export function emptyResult(): AnalysisResult {
 
 /** Standard columns shared by most views: time, event ID, computer. */
 export function timeColumn<R extends { event: EvtxEvent }>(label = 'Time'): Column<R> {
-  return { id: 'time', label, kind: 'time', value: r => r.event.ts, size: 190 };
+  return { id: 'time', label, kind: 'time', value: r => r.event.ts, size: 230 };
 }
 
 export function eventIdColumn<R extends { event: EvtxEvent }>(): Column<R> {

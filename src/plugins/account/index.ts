@@ -132,12 +132,12 @@ interface AccountSummary {
 const summaryColumns: Column<AccountSummary>[] = [
   text('name', 'Account', r => r.name, { size: 220 }),
   text('sid', 'SID', r => r.sid, { size: 260, kind: 'mono' }),
-  { id: 'created', label: 'Created', kind: 'time', value: r => r.created, size: 190 },
-  { id: 'deleted', label: 'Deleted', kind: 'time', value: r => r.deleted, size: 190, tone: r => (Number.isFinite(r.deleted) ? 'danger' : undefined) },
+  { id: 'created', label: 'Created', kind: 'time', value: r => r.created, size: 230 },
+  { id: 'deleted', label: 'Deleted', kind: 'time', value: r => r.deleted, size: 230, tone: r => (Number.isFinite(r.deleted) ? 'danger' : undefined) },
   text('state', 'Last state', r => r.state, { size: 100, facet: true }),
-  { id: 'lastReset', label: 'Last password reset', kind: 'time', value: r => r.lastReset, size: 190 },
-  { id: 'lastChange', label: 'Last change', kind: 'time', value: r => r.lastChange, size: 190 },
-  { id: 'lastLogon', label: 'Last logon (4624)', kind: 'time', value: r => r.lastLogon, size: 190 },
+  { id: 'lastReset', label: 'Last password reset', kind: 'time', value: r => r.lastReset, size: 230 },
+  { id: 'lastChange', label: 'Last change', kind: 'time', value: r => r.lastChange, size: 230 },
+  { id: 'lastLogon', label: 'Last logon (4624)', kind: 'time', value: r => r.lastLogon, size: 230 },
   text('groups', 'Added to groups', r => r.groupsAdded, { size: 260 }),
 ];
 

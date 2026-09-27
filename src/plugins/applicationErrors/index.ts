@@ -121,8 +121,8 @@ const appColumns: Column<AppSummary>[] = [
   text('app', 'Application', r => r.app, { size: 220 }),
   text('path', 'Path', r => r.path, { size: 360 }),
   { id: 'count', label: 'Events', kind: 'number', value: r => r.count, size: 80 },
-  { id: 'first', label: 'First', kind: 'time', value: r => r.first, size: 190 },
-  { id: 'last', label: 'Last', kind: 'time', value: r => r.last, size: 190 },
+  { id: 'first', label: 'First', kind: 'time', value: r => r.first, size: 230 },
+  { id: 'last', label: 'Last', kind: 'time', value: r => r.last, size: 230 },
   text('exceptions', 'Exceptions', r => r.exceptions, { size: 300 }),
 ];
 

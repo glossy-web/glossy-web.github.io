@@ -47,8 +47,8 @@ const summaryColumns: Column<UpdateSummary>[] = [
   text('kb', 'KB', r => r.kb, { size: 110 }),
   text('title', 'Update', r => r.title, { size: 520 }),
   text('computer', 'Computer', r => r.computer, { size: 150, facet: true }),
-  { id: 'firstSeen', label: 'First seen', kind: 'time', value: r => r.firstSeen, size: 190 },
-  { id: 'installed', label: 'Installed', kind: 'time', value: r => r.installed, size: 190 },
+  { id: 'firstSeen', label: 'First seen', kind: 'time', value: r => r.firstSeen, size: 230 },
+  { id: 'installed', label: 'Installed', kind: 'time', value: r => r.installed, size: 230 },
   { id: 'failures', label: 'Failures', kind: 'number', value: r => r.failures, size: 90, tone: r => (r.failures ? 'danger' : undefined) },
 ];
 

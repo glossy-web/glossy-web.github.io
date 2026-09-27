@@ -14,7 +14,7 @@
 
     <ul class="facts text-start small text-body-secondary mt-4 col-lg-7">
       <li>Reads every chunk, including those a dirty (not cleanly closed) header leaves out, and reports damaged chunks instead of stopping.</li>
-      <li>Timestamps are shown in this computer's time zone until you pick another (e.g. UTC) from the header; the zone is named wherever times appear. CSV exports carry the offset; JSONL for Timesketch is always UTC.</li>
+      <li>Timestamps are shown in this computer's time zone until you pick another (e.g. UTC) from the header, each with its offset from UTC. CSV exports carry the offset too; JSONL for Timesketch is always UTC.</li>
       <li>Flags record-number gaps, duplicate files and duplicate records (e.g. shadow copies), and which logs are missing.</li>
       <li>Analysis modules follow the original <a :href="links.original" target="_blank" rel="noopener">Glossy</a> (<a :href="links.paper" target="_blank" rel="noopener">KDFS 2017 paper</a>, Korean) and current triage practice.</li>
     </ul>

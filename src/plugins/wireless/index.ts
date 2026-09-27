@@ -72,8 +72,8 @@ interface NetworkSummary {
 const networkColumns: Column<NetworkSummary>[] = [
   text('ssid', 'SSID', r => r.ssid, { size: 220 }),
   text('computer', 'Computer', r => r.computer, { size: 150, facet: true }),
-  { id: 'first', label: 'First connected', kind: 'time', value: r => r.first, size: 190 },
-  { id: 'last', label: 'Last connected', kind: 'time', value: r => r.last, size: 190 },
+  { id: 'first', label: 'First connected', kind: 'time', value: r => r.first, size: 230 },
+  { id: 'last', label: 'Last connected', kind: 'time', value: r => r.last, size: 230 },
   { id: 'connections', label: 'Connections', kind: 'number', value: r => r.connections, size: 100 },
   { id: 'failures', label: 'Failures', kind: 'number', value: r => r.failures, size: 80 },
   text('security', 'Security', r => r.security, { size: 200, tone: r => (/open|none|wep/i.test(r.security) ? 'warning' : undefined) }),

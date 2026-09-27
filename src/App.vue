@@ -10,11 +10,11 @@
       </span>
       <div class="ms-auto d-flex align-items-center gap-2">
         <label class="small text-body-secondary" for="tz">Time zone</label>
-        <select id="tz" v-model="timeZone" class="form-select form-select-sm tz">
-          <option :value="local">{{ local }} (system)</option>
-          <option v-if="local !== 'UTC'" value="UTC">UTC</option>
+        <select id="tz" v-model="timeZone" class="form-select form-select-sm tz" @focus="zonesOpen = true" @mousedown="zonesOpen = true">
+          <option :value="local">{{ zoneName(local) }} (system)</option>
+          <option v-if="local !== 'UTC'" value="UTC">{{ zoneName('UTC') }}</option>
           <option disabled>──────────</option>
-          <option v-for="z in zones" :key="z" :value="z">{{ z }}</option>
+          <option v-for="z in zones" :key="z" :value="z">{{ zoneName(z) }}</option>
         </select>
         <button class="btn btn-sm btn-primary" @click="fileInput?.click()"><i class="bi bi-file-earmark-plus"></i> Add files</button>
         <button class="btn btn-sm btn-outline-secondary" @click="folderInput?.click()"><i class="bi bi-folder-plus"></i> Add folder</button>
@@ -40,7 +40,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
 import { eventStore } from '@/core/store';
-import { allZones, browserZone } from '@/core/time';
+import { allZones, browserZone, offsetLabel } from '@/core/time';
 import { clearAll, loadFiles, loader } from '@/composables/useFileLoader';
 import { activePage, timeZone } from '@/composables/useGlossyStore';
 import Sidebar from '@/components/layout/Sidebar.vue';
@@ -53,7 +53,15 @@ import icon from '@/assets/glossy.ico';
 const fileInput = ref<HTMLInputElement | null>(null);
 const folderInput = ref<HTMLInputElement | null>(null);
 const local = browserZone();
-const zones = allZones().filter(z => z !== 'UTC' && z !== local);
+// Windows-style names with the current offset, e.g. "(UTC+09:00) Asia/Seoul". Every time shown also
+// carries its own offset, which differs from this one across daylight saving changes.
+const zoneName = (z: string) => `(${offsetLabel(z)}) ${z}`;
+// The full list (400+ zones, one formatter each) is built when the picker is first opened.
+const zonesOpen = ref(false);
+const zones = computed(() => {
+  const others = zonesOpen.value ? allZones() : [timeZone.value];
+  return others.filter(z => z !== 'UTC' && z !== local);
+});
 
 const sourceCount = computed(() => {
   void eventStore.version.value;
@@ -99,7 +107,7 @@ function confirmClear() {
   font-size: 15px;
 }
 .tz {
-  width: 220px;
+  width: 340px;
 }
 .main {
   min-height: 0;

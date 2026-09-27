@@ -128,8 +128,8 @@ const productColumns: Column<ProductSummary>[] = [
   text('version', 'Version', r => r.version, { size: 120 }),
   text('publisher', 'Publisher', r => r.publisher, { size: 200, facet: true }),
   text('computer', 'Computer', r => r.computer, { size: 150, facet: true }),
-  { id: 'installed', label: 'Last installed', kind: 'time', value: r => r.installed, size: 190 },
-  { id: 'removed', label: 'Last removed', kind: 'time', value: r => r.removed, size: 190, tone: r => (r.removed > r.installed ? 'warning' : undefined) },
+  { id: 'installed', label: 'Last installed', kind: 'time', value: r => r.installed, size: 230 },
+  { id: 'removed', label: 'Last removed', kind: 'time', value: r => r.removed, size: 230, tone: r => (r.removed > r.installed ? 'warning' : undefined) },
   { id: 'events', label: 'Events', kind: 'number', value: r => r.events, size: 80 },
 ];
 
