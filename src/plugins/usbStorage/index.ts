@@ -192,7 +192,7 @@ export const usbStorage: Plugin = {
   name: 'usbStorage',
   label: 'USB Storage',
   category: 'Hardware',
-  icon: 'usb-drive',
+  icon: 'usb',
   description:
     'Removable storage and portable devices: first install (UserPnp, Kernel-PnP), connections and removals (Partition/Diagnostic 1006 on Windows 10+, DriverFrameworks-UserMode). Serials, capacity and the volume serial number from the boot record link a device to LNK files and jump lists.',
   sources: SOURCES,

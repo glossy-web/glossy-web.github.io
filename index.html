@@ -1,10 +1,16 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" class="dark">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="description" content="Browser-based Windows event log (EVTX) forensics. Files never leave the browser." />
     <link rel="icon" href="/src/assets/glossy.ico" />
+    <script>
+      // Dark by default; apply a saved light choice before the first paint (see src/composables/useTheme.ts).
+      try {
+        if (localStorage.getItem('glossy.theme') === 'light') document.documentElement.classList.remove('dark');
+      } catch {}
+    </script>
     <title>Glossy - Event Log Forensics</title>
   </head>
   <body>

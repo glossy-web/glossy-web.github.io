@@ -1,67 +1,98 @@
 <template>
-  <div class="app d-flex flex-column">
-    <header class="topbar d-flex align-items-center gap-3 px-3 border-bottom">
-      <a href="#" class="brand text-reset text-decoration-none fw-semibold" @click.prevent="activePage = '__overview'">
-        <img :src="icon" alt="" width="20" height="20" class="me-1" />Glossy
-      </a>
-      <span v-if="hasData || loader.busy" class="small text-body-secondary tabular">
-        {{ sourceCount }} file(s) · {{ eventCount.toLocaleString() }} events
-        <span v-if="loader.busy" class="ms-1"><span class="spinner-border spinner-border-sm" aria-hidden="true"></span> parsing</span>
-      </span>
-      <div class="ms-auto d-flex align-items-center gap-2">
-        <label class="small text-body-secondary" for="tz">Time zone</label>
-        <select id="tz" v-model="timeZone" class="form-select form-select-sm tz" @focus="zonesOpen = true" @mousedown="zonesOpen = true">
-          <option :value="local">{{ zoneName(local) }} (system)</option>
-          <option v-if="local !== 'UTC'" value="UTC">{{ zoneName('UTC') }}</option>
-          <option disabled>──────────</option>
-          <option v-for="z in zones" :key="z" :value="z">{{ zoneName(z) }}</option>
-        </select>
-        <button class="btn btn-sm btn-primary" @click="fileInput?.click()"><i class="bi bi-file-earmark-plus"></i> Add files</button>
-        <button class="btn btn-sm btn-outline-secondary" @click="folderInput?.click()"><i class="bi bi-folder-plus"></i> Add folder</button>
-        <button v-if="hasData" class="btn btn-sm btn-outline-danger" @click="confirmClear"><i class="bi bi-trash"></i> Clear</button>
-      </div>
-      <input ref="fileInput" type="file" multiple accept=".evtx" hidden @change="onPick" />
-      <input ref="folderInput" type="file" webkitdirectory multiple hidden @change="onPick" />
-    </header>
+  <SidebarProvider class="h-svh min-h-0">
+    <AppSidebar v-if="hasData" />
+    <SidebarInset class="min-w-0 overflow-hidden">
+      <header class="bg-background flex h-10 shrink-0 items-center gap-2 border-b px-2">
+        <template v-if="hasData">
+          <SidebarTrigger />
+          <Separator orientation="vertical" class="h-4!" />
+        </template>
+        <RouterLink v-else to="/" class="flex items-center gap-1.5 px-1 text-sm font-semibold"><img :src="logo" alt="" class="size-4" />Glossy</RouterLink>
+        <span v-if="hasData || loader.busy" class="text-muted-foreground flex items-center gap-1.5 text-xs tabular-nums">
+          {{ sourceCount }} file(s) · {{ eventCount.toLocaleString() }} events
+          <template v-if="loader.busy"><LoaderCircleIcon class="size-3.5 animate-spin" /> parsing</template>
+        </span>
 
-    <div class="main d-flex flex-grow-1">
-      <Sidebar v-if="hasData" :active="activePage" @select="activePage = $event" />
-      <main class="content d-flex flex-column flex-grow-1">
+        <div class="ml-auto flex items-center gap-1.5">
+          <Button variant="outline" class="text-muted-foreground w-44 justify-between font-normal" @click="paletteOpen = true">
+            <span class="flex items-center gap-1.5"><SearchIcon />Go to…</span>
+            <KbdGroup><Kbd>Ctrl</Kbd><Kbd>K</Kbd></KbdGroup>
+          </Button>
+          <TimeZonePicker />
+          <Button variant="ghost" size="icon" :aria-label="isDark ? 'Switch to light mode' : 'Switch to dark mode'" :title="isDark ? 'Light mode' : 'Dark mode'" @click="toggleTheme">
+            <SunIcon v-if="isDark" /><MoonIcon v-else />
+          </Button>
+          <Separator orientation="vertical" class="h-4!" />
+          <Button @click="fileInput?.click()"><FilePlusIcon />Add files</Button>
+          <Button variant="outline" @click="folderInput?.click()"><FolderPlusIcon />Add folder</Button>
+          <Button v-if="hasData" variant="ghost" size="icon" aria-label="Remove all files" title="Remove all files" @click="confirmClear = true"><Trash2Icon /></Button>
+        </div>
+        <input ref="fileInput" type="file" multiple accept=".evtx" hidden @change="onPick" />
+        <input ref="folderInput" type="file" webkitdirectory multiple hidden @change="onPick" />
+      </header>
+
+      <div class="flex min-h-0 flex-1 flex-col">
         <SourceIndex v-if="!hasData && !loader.files.length" @browse="fileInput?.click()" />
-        <SourceList v-else-if="activePage === '__overview' || !hasData" :zone="timeZone" />
-        <PluginView v-else :key="activePage" :name="activePage" :zone="timeZone" />
-      </main>
-    </div>
+        <RouterView v-else v-slot="{ Component, route }">
+          <component :is="Component" :key="String(route.params['name'] ?? 'overview')" />
+        </RouterView>
+      </div>
+    </SidebarInset>
 
+    <CommandPalette v-model:open="paletteOpen" :has-data="hasData" @command="onCommand" />
+    <AlertDialog v-model:open="confirmClear">
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Remove all files?</AlertDialogTitle>
+          <AlertDialogDescription>Every loaded file and event is removed from this page. The files on disk are not touched.</AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Cancel</AlertDialogCancel>
+          <AlertDialogAction variant="destructive" @click="clear">Remove</AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
     <FileDropZone @files="load" />
-  </div>
+    <Toaster position="bottom-right" rich-colors />
+  </SidebarProvider>
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import 'vue-sonner/style.css';
+import { computed, ref, watch } from 'vue';
+import { useRouter } from 'vue-router';
+import { toast } from 'vue-sonner';
+import { FilePlusIcon, FolderPlusIcon, LoaderCircleIcon, MoonIcon, SearchIcon, SunIcon, Trash2Icon } from '@lucide/vue';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import { Button } from '@/components/ui/button';
+import { Kbd, KbdGroup } from '@/components/ui/kbd';
+import { Separator } from '@/components/ui/separator';
+import { SidebarInset, SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar';
+import { Toaster } from '@/components/ui/sonner';
 import { eventStore } from '@/core/store';
-import { allZones, browserZone, offsetLabel } from '@/core/time';
 import { clearAll, loadFiles, loader } from '@/composables/useFileLoader';
-import { activePage, timeZone } from '@/composables/useGlossyStore';
-import Sidebar from '@/components/layout/Sidebar.vue';
+import { isDark, toggleTheme } from '@/composables/useTheme';
+import AppSidebar from '@/components/layout/AppSidebar.vue';
+import CommandPalette, { type PaletteCommand } from '@/components/layout/CommandPalette.vue';
+import TimeZonePicker from '@/components/layout/TimeZonePicker.vue';
 import SourceIndex from '@/components/SourceIndex.vue';
-import SourceList from '@/components/SourceList.vue';
-import PluginView from '@/components/PluginView.vue';
 import FileDropZone from '@/components/FileDropZone.vue';
-import icon from '@/assets/glossy.ico';
+import logo from '@/assets/glossy.ico';
 
+const router = useRouter();
 const fileInput = ref<HTMLInputElement | null>(null);
 const folderInput = ref<HTMLInputElement | null>(null);
-const local = browserZone();
-// Windows-style names with the current offset, e.g. "(UTC+09:00) Asia/Seoul". Every time shown also
-// carries its own offset, which differs from this one across daylight saving changes.
-const zoneName = (z: string) => `(${offsetLabel(z)}) ${z}`;
-// The full list (400+ zones, one formatter each) is built when the picker is first opened.
-const zonesOpen = ref(false);
-const zones = computed(() => {
-  const others = zonesOpen.value ? allZones() : [timeZone.value];
-  return others.filter(z => z !== 'UTC' && z !== local);
-});
+const paletteOpen = ref(false);
+const confirmClear = ref(false);
 
 const sourceCount = computed(() => {
   void eventStore.version.value;
@@ -74,7 +105,7 @@ const eventCount = computed(() => {
 const hasData = computed(() => sourceCount.value > 0);
 
 function load(files: File[]) {
-  activePage.value = '__overview';
+  void router.push('/');
   void loadFiles(files);
 }
 
@@ -84,39 +115,37 @@ function onPick(e: Event) {
   input.value = '';
 }
 
-function confirmClear() {
-  if (window.confirm('Remove all loaded files and events from this page?')) {
-    clearAll();
-    activePage.value = '__overview';
-  }
+function clear() {
+  clearAll();
+  void router.push('/');
+  toast('All files removed');
 }
-</script>
 
-<style scoped>
-.app {
-  height: 100vh;
+function onCommand(command: PaletteCommand) {
+  if (command === 'add-files') fileInput.value?.click();
+  else if (command === 'add-folder') folderInput.value?.click();
+  else confirmClear.value = true;
 }
-.topbar {
-  height: 48px;
-  flex-shrink: 0;
-  background: var(--bs-tertiary-bg);
-}
-.brand {
-  display: flex;
-  align-items: center;
-  font-size: 15px;
-}
-.tz {
-  width: 340px;
-}
-.main {
-  min-height: 0;
-}
-.content {
-  min-width: 0;
-  min-height: 0;
-}
-.tabular {
-  font-variant-numeric: tabular-nums;
-}
-</style>
+
+// One summary toast per loading batch.
+let batchStart = 0;
+let eventsBefore = 0;
+watch(
+  () => loader.busy,
+  busy => {
+    if (busy) {
+      batchStart = loader.files.findIndex(f => f.status === 'queued' || f.status === 'reading' || f.status === 'parsing');
+      eventsBefore = eventStore.size;
+      return;
+    }
+    const batch = loader.files.slice(Math.max(0, batchStart));
+    const failed = batch.filter(f => f.status === 'failed').length;
+    const skipped = batch.filter(f => f.status === 'skipped').length;
+    const done = batch.length - failed - skipped;
+    const detail = [skipped && `${skipped} already loaded`, failed && `${failed} failed`].filter(Boolean).join(', ');
+    const message = `${done} file(s) loaded · ${(eventStore.size - eventsBefore).toLocaleString()} events added`;
+    if (failed) toast.warning(message, { description: detail });
+    else toast.success(message, { description: detail || undefined });
+  },
+);
+</script>

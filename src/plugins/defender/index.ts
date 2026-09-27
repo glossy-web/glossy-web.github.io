@@ -190,7 +190,7 @@ export const defender: Plugin = {
   name: 'defender',
   label: 'Microsoft Defender',
   category: 'System',
-  icon: 'shield-exclamation',
+  icon: 'shield-alert',
   description:
     'Malware detections and the actions taken (1116/1117, failures 1118/1119, legacy 1006–1008, behavior 1015), and changes that weaken protection: real-time protection or scanning disabled, exclusions added (5007), tamper protection blocks and deleted history.',
   sources: SOURCES,

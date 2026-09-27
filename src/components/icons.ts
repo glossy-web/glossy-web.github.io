@@ -1,0 +1,61 @@
+import type { Component } from 'vue';
+import {
+  AppWindowIcon,
+  BrickWallIcon,
+  BugIcon,
+  CirclePlayIcon,
+  ClockIcon,
+  CogIcon,
+  CpuIcon,
+  DiscIcon,
+  EraserIcon,
+  HistoryIcon,
+  ListIcon,
+  LogInIcon,
+  MonitorCogIcon,
+  MonitorIcon,
+  PackageIcon,
+  PowerIcon,
+  PrinterIcon,
+  RefreshCwIcon,
+  ShieldAlertIcon,
+  SquareTerminalIcon,
+  TerminalIcon,
+  UsbIcon,
+  UserCogIcon,
+  UsersIcon,
+  WifiIcon,
+} from '@lucide/vue';
+
+/** Plugins and categories name their icon (lucide, kebab-case); the UI resolves the name here. */
+const ICONS: Record<string, Component> = {
+  'app-window': AppWindowIcon,
+  'brick-wall': BrickWallIcon,
+  bug: BugIcon,
+  'circle-play': CirclePlayIcon,
+  clock: ClockIcon,
+  cog: CogIcon,
+  cpu: CpuIcon,
+  disc: DiscIcon,
+  eraser: EraserIcon,
+  history: HistoryIcon,
+  list: ListIcon,
+  'log-in': LogInIcon,
+  'monitor-cog': MonitorCogIcon,
+  monitor: MonitorIcon,
+  package: PackageIcon,
+  power: PowerIcon,
+  printer: PrinterIcon,
+  'refresh-cw': RefreshCwIcon,
+  'shield-alert': ShieldAlertIcon,
+  'square-terminal': SquareTerminalIcon,
+  terminal: TerminalIcon,
+  usb: UsbIcon,
+  'user-cog': UserCogIcon,
+  users: UsersIcon,
+  wifi: WifiIcon,
+};
+
+export function icon(name: string): Component {
+  return ICONS[name] ?? ListIcon;
+}

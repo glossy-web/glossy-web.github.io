@@ -22,8 +22,5 @@ watch(timeZone, zone => {
   }
 });
 
-/** Page shown in the main area: '__overview' or a plugin name. */
-export const activePage = ref('__overview');
-
 /** Per-plugin option toggles (noise filters etc.), keyed by plugin name. */
 export const pluginOptions = ref<Record<string, Record<string, boolean>>>({});

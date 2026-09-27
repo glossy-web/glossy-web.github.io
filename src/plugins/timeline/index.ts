@@ -115,7 +115,7 @@ export function createTimeline(modules: readonly Plugin[]): Plugin {
     name: 'timeline',
     label: 'Timeline',
     category: 'All',
-    icon: 'clock-history',
+    icon: 'history',
     description:
       'One chronology built from every module with its default options. Bookkeeping events stay out (logoffs, process exits, service state changes, duplicate MSI lines, PowerShell module logging without indicators); open a module for its full view. The Entities view lists accounts, remote addresses and computers; click one to filter the timeline to it.',
     // Log coverage is per module and on the overview; listing every channel here would bury the page.

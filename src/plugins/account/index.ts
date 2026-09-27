@@ -148,7 +148,7 @@ export const accountManagement: Plugin = {
   name: 'account',
   label: 'Account Management',
   category: 'Account',
-  icon: 'person-gear',
+  icon: 'user-cog',
   description:
     'Creation, deletion, password resets, lockouts, renames and group membership changes. Additions to administrative groups are highlighted. The Accounts view builds a lifecycle per SID.',
   sources: [{ channel: 'Security', provider: SECURITY, ids: [...USER_EVENTS, 4728, 4729, 4732, 4733, 4756, 4757, 4731, 4734, 4735, 4798, 4799] }],

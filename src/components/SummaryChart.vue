@@ -1,7 +1,7 @@
 <template>
-  <figure class="chart border rounded p-2 mb-0" :style="{ background: theme.surface }">
-    <figcaption class="small fw-semibold px-1">{{ spec.title }}</figcaption>
-    <div ref="el" class="canvas" :style="{ height: height + 'px' }" role="img" :aria-label="ariaLabel"></div>
+  <figure class="bg-card min-w-0 rounded-lg border p-2">
+    <figcaption class="px-1 text-xs font-medium">{{ spec.title }}</figcaption>
+    <div ref="el" class="w-full" :style="{ height: height + 'px' }" role="img" :aria-label="ariaLabel"></div>
   </figure>
 </template>
 
@@ -13,13 +13,15 @@ import { DataZoomComponent, GridComponent, LegendComponent, TooltipComponent } f
 import { CanvasRenderer } from 'echarts/renderers';
 import type { ChartSpec } from '@/core/plugin';
 import { dayAndHour, formatTime } from '@/core/time';
-import { chartTheme as theme } from './chartTheme';
+import { isDark } from '@/composables/useTheme';
+import { chartTheme } from './chartTheme';
 
 echarts.use([BarChart, ScatterChart, GridComponent, TooltipComponent, LegendComponent, DataZoomComponent, CanvasRenderer]);
 
 const props = defineProps<{ spec: ChartSpec; zone: string }>();
 const el = ref<HTMLElement | null>(null);
 let chart: echarts.ECharts | null = null;
+let theme = chartTheme(isDark.value);
 let resize: ResizeObserver | null = null;
 
 const height = computed(() => (props.spec.kind === 'ranking' ? Math.max(120, props.spec.items.length * 22 + 40) : 260));
@@ -157,6 +159,7 @@ function option() {
 function render() {
   if (!el.value) return;
   chart ??= echarts.init(el.value, undefined, { renderer: 'canvas' });
+  theme = chartTheme(isDark.value);
   chart.setOption(option() as never, true);
 }
 
@@ -165,18 +168,9 @@ onMounted(() => {
   resize = new ResizeObserver(() => chart?.resize());
   if (el.value) resize.observe(el.value);
 });
-watch(() => [props.spec, props.zone], render);
+watch(() => [props.spec, props.zone, isDark.value], render);
 onBeforeUnmount(() => {
   resize?.disconnect();
   chart?.dispose();
 });
 </script>
-
-<style scoped>
-.chart {
-  min-width: 0;
-}
-.canvas {
-  width: 100%;
-}
-</style>

@@ -1,91 +1,84 @@
 <template>
-  <div class="event-table d-flex flex-column flex-grow-1">
-    <div class="toolbar d-flex flex-wrap align-items-center gap-2 mb-2">
-      <div class="input-group input-group-sm search">
-        <span class="input-group-text"><i class="bi bi-search" aria-hidden="true"></i></span>
-        <input
-          v-model="search"
-          type="search"
-          class="form-control"
-          placeholder="Search all columns"
-          aria-label="Search all columns"
-        />
+  <div class="flex min-h-0 flex-1 flex-col gap-1.5">
+    <div class="flex flex-wrap items-center gap-1.5">
+      <div class="relative w-72">
+        <SearchIcon class="text-muted-foreground pointer-events-none absolute top-1/2 left-2 size-3.5 -translate-y-1/2" aria-hidden="true" />
+        <Input v-model="search" type="search" class="pl-7" placeholder="Search all columns" aria-label="Search all columns" />
       </div>
-      <span class="text-body-secondary small tabular">
-        {{ rows.length.toLocaleString() }} of {{ view.rows.length.toLocaleString() }} rows
-      </span>
-      <button v-if="hasFilters" class="btn btn-sm btn-link px-1" @click="clearFilters">Clear filters</button>
-      <div class="ms-auto d-flex gap-2">
-        <details class="columns-menu">
-          <summary class="btn btn-sm btn-outline-secondary"><i class="bi bi-layout-three-columns"></i> Columns</summary>
-          <div class="menu shadow-sm border rounded p-2">
-            <label v-for="col in table.getAllLeafColumns()" :key="col.id" class="form-check small mb-1">
-              <input
-                class="form-check-input"
-                type="checkbox"
-                :checked="col.getIsVisible()"
-                @change="col.toggleVisibility()"
-              />
+      <span class="text-muted-foreground text-xs tabular-nums">{{ rows.length.toLocaleString() }} of {{ view.rows.length.toLocaleString() }} rows</span>
+      <Button v-if="hasFilters" variant="ghost" size="sm" @click="clearFilters"><FilterXIcon />Clear filters</Button>
+      <div class="ml-auto flex items-center gap-1.5">
+        <DropdownMenu>
+          <DropdownMenuTrigger as-child>
+            <Button variant="outline"><Columns3Icon />Columns</Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" class="max-h-96 w-56 overflow-auto">
+            <DropdownMenuCheckboxItem
+              v-for="col in table.getAllLeafColumns()"
+              :key="col.id"
+              :model-value="col.getIsVisible()"
+              @update:model-value="(v: boolean) => col.toggleVisibility(v)"
+              @select="(e: Event) => e.preventDefault()"
+            >
               {{ labelOf(col.id) }}
-            </label>
-          </div>
-        </details>
-        <button class="btn btn-sm btn-outline-secondary" :disabled="rows.length === 0" @click="exportCsv">
-          <i class="bi bi-download"></i> CSV
-        </button>
-        <button
-          class="btn btn-sm btn-outline-secondary"
-          :disabled="rows.length === 0 || !timeColumns.length"
-          title="Timesketch JSONL (UTC)"
-          @click="exportJsonl"
-        >
-          <i class="bi bi-download"></i> JSONL
-        </button>
+            </DropdownMenuCheckboxItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+        <Button variant="outline" :disabled="rows.length === 0" title="CSV in the selected time zone" @click="exportCsv"><DownloadIcon />CSV</Button>
+        <Button variant="outline" :disabled="rows.length === 0 || !timeColumns.length" title="Timesketch JSONL (UTC)" @click="exportJsonl"><DownloadIcon />JSONL</Button>
       </div>
     </div>
 
-    <div ref="scroller" class="scroller border rounded flex-grow-1">
-      <table class="table table-sm table-hover mb-0" :style="{ minWidth: totalWidth + 'px' }">
+    <div ref="scroller" class="bg-card min-h-60 flex-1 basis-0 overflow-auto rounded-lg border">
+      <table class="w-full table-fixed border-separate border-spacing-0 text-xs" :style="{ minWidth: totalWidth + 'px' }">
         <colgroup>
           <col v-for="col in visibleColumns" :key="col.id" :style="{ width: (defs[col.id]?.size ?? 160) + 'px' }" />
         </colgroup>
-        <thead>
+        <thead class="bg-muted sticky top-0 z-10">
           <tr>
             <th
               v-for="col in visibleColumns"
               :key="col.id"
               scope="col"
-              :class="{ 'text-end': defs[col.id]?.kind === 'number' }"
+              class="h-7 border-b px-1.5 text-left font-medium whitespace-nowrap"
+              :class="{ 'text-right': defs[col.id]?.kind === 'number' }"
               :aria-sort="ariaSort(col.getIsSorted())"
             >
-              <button class="sort-btn" type="button" @click="col.toggleSorting(undefined, false)">
-                {{ labelOf(col.id) }}
-                <i v-if="col.getIsSorted()" :class="col.getIsSorted() === 'asc' ? 'bi bi-caret-up-fill' : 'bi bi-caret-down-fill'"></i>
+              <button
+                type="button"
+                class="focus-visible:ring-ring/50 flex w-full items-center gap-1 overflow-hidden rounded-sm text-ellipsis outline-none focus-visible:ring-2"
+                :class="{ 'justify-end': defs[col.id]?.kind === 'number' }"
+                @click="col.toggleSorting(undefined, false)"
+              >
+                <span class="truncate">{{ labelOf(col.id) }}</span>
+                <ArrowUpIcon v-if="col.getIsSorted() === 'asc'" class="size-3 shrink-0" />
+                <ArrowDownIcon v-else-if="col.getIsSorted() === 'desc'" class="size-3 shrink-0" />
               </button>
             </th>
           </tr>
-          <tr class="filters">
-            <th v-for="col in visibleColumns" :key="col.id">
-              <select
+          <tr>
+            <th v-for="col in visibleColumns" :key="col.id" class="border-b px-1 pb-1 font-normal">
+              <NativeSelect
                 v-if="defs[col.id]?.facet"
-                class="form-select form-select-sm"
-                :value="(col.getFilterValue() as string) ?? ''"
+                size="sm"
+                class="w-full"
+                :model-value="(col.getFilterValue() as string) ?? ''"
                 :aria-label="`Filter ${labelOf(col.id)}`"
                 @focus="facetOpen[col.id] = true"
-                @change="col.setFilterValue(($event.target as HTMLSelectElement).value || undefined)"
+                @update:model-value="(v: unknown) => col.setFilterValue(v ? String(v) : undefined)"
               >
                 <option value="">All</option>
                 <option v-for="[value, count] in facetValues(col)" :key="value" :value="value">
                   {{ value === '' ? '(empty)' : value }}{{ Number.isNaN(count) ? '' : ` (${count})` }}
                 </option>
-              </select>
-              <input
+              </NativeSelect>
+              <Input
                 v-else
-                class="form-control form-control-sm"
-                :value="(col.getFilterValue() as string) ?? ''"
+                class="h-6 px-1.5 text-[11px]"
+                :model-value="(col.getFilterValue() as string) ?? ''"
                 :placeholder="defs[col.id]?.kind === 'time' ? 'YYYY-MM-DD…' : 'contains…'"
                 :aria-label="`Filter ${labelOf(col.id)}`"
-                @input="col.setFilterValue(($event.target as HTMLInputElement).value || undefined)"
+                @update:model-value="(v: string | number) => col.setFilterValue(v === '' ? undefined : String(v))"
               />
             </th>
           </tr>
@@ -95,19 +88,21 @@
           <tr
             v-for="item in virtualItems"
             :key="String(item.key)"
-            :class="{ clickable: !!(view.event || view.pivot) }"
+            class="hover:bg-muted/60"
+            :class="{ 'cursor-pointer': !!(view.event || view.pivot) }"
             @click="open(rows[item.index]!.original)"
           >
             <td
               v-for="col in visibleColumns"
               :key="col.id"
+              class="h-[26px] truncate border-b px-1.5"
               :class="cellClass(rows[item.index]!.original, col.id)"
               :title="cellText(rows[item.index]!.original, col.id)"
             >{{ cellText(rows[item.index]!.original, col.id) }}</td>
           </tr>
           <tr v-if="padBottom > 0" aria-hidden="true"><td :colspan="visibleColumns.length" :style="{ height: padBottom + 'px', padding: 0, border: 0 }"></td></tr>
           <tr v-if="rows.length === 0">
-            <td :colspan="visibleColumns.length" class="text-center text-body-secondary py-4">
+            <td :colspan="visibleColumns.length" class="text-muted-foreground py-6 text-center">
               {{ view.rows.length === 0 ? 'No matching events in the loaded logs.' : 'No rows match the current filters.' }}
             </td>
           </tr>
@@ -133,7 +128,13 @@ import {
   useTable,
 } from '@tanstack/vue-table';
 import { useVirtualizer } from '@tanstack/vue-virtual';
-import type { Column, Pivot, RowDetail, View } from '@/core/plugin';
+import { toast } from 'vue-sonner';
+import { ArrowDownIcon, ArrowUpIcon, Columns3Icon, DownloadIcon, FilterXIcon, SearchIcon } from '@lucide/vue';
+import { Button } from '@/components/ui/button';
+import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { Input } from '@/components/ui/input';
+import { NativeSelect } from '@/components/ui/native-select';
+import type { Column, Pivot, RowDetail, Tone, View } from '@/core/plugin';
 import type { EvtxEvent } from '@/core/evtx/types';
 import { download } from '@/core/csv';
 import { cellText as textOf, tableToCsv, tableToJsonl, type TableSnapshot } from '@/core/tableExport';
@@ -151,7 +152,14 @@ const props = defineProps<{
 }>();
 const emit = defineEmits<{ open: [event: EvtxEvent, detail: RowDetail | undefined]; pivot: [target: Pivot] }>();
 
-const ROW_HEIGHT = 27;
+const ROW_HEIGHT = 26;
+
+const TONE: Record<Tone, string> = {
+  danger: 'text-danger font-semibold',
+  warning: 'text-warning font-semibold',
+  success: 'text-success',
+  muted: 'text-muted-foreground',
+};
 
 const defs = computed<Record<string, AnyColumn>>(() => Object.fromEntries(props.view.columns.map(c => [c.id, c])));
 const labelOf = (id: string) => defs.value[id]?.label ?? id;
@@ -165,12 +173,11 @@ function cellClass(row: Row, id: string): string[] {
   const col = defs.value[id];
   if (!col) return [];
   const classes: string[] = [];
-  if (col.kind === 'number') classes.push('text-end', 'tabular');
-  if (col.kind === 'time') classes.push('tabular', 'text-nowrap');
-  if (col.kind === 'mono') classes.push('font-monospace');
-  if (col.kind === 'wrap') classes.push('wrap');
+  if (col.kind === 'number') classes.push('text-right', 'tabular-nums');
+  if (col.kind === 'time') classes.push('tabular-nums');
+  if (col.kind === 'mono') classes.push('font-mono');
   const tone = col.tone?.(row);
-  if (tone) classes.push(`tone-${tone}`);
+  if (tone) classes.push(TONE[tone]);
   return classes;
 }
 
@@ -317,95 +324,7 @@ function exportCsv() {
 
 function exportJsonl() {
   const { text, skipped } = tableToJsonl(snapshot(), timeColumns.value, `glossy:${props.exportName}`);
-  if (skipped) alert(`${skipped.toLocaleString()} row(s) without a time were left out of the JSONL file.`);
+  if (skipped) toast.warning(`${skipped.toLocaleString()} row(s) without a time were left out of the JSONL file.`);
   if (text) download(fileName('jsonl'), text, 'application/x-ndjson;charset=utf-8');
 }
 </script>
-
-<style scoped>
-.event-table {
-  min-height: 0;
-}
-.search {
-  width: 280px;
-}
-.scroller {
-  overflow: auto;
-  min-height: 240px;
-  flex: 1 1 0;
-  background: var(--bs-body-bg);
-}
-table {
-  table-layout: fixed;
-  font-size: 12.5px;
-}
-thead th {
-  position: sticky;
-  z-index: 2;
-  background: var(--bs-tertiary-bg);
-  white-space: nowrap;
-}
-thead tr:first-child th {
-  top: 0;
-}
-thead tr.filters th {
-  top: 31px;
-  padding: 2px 4px 4px;
-  font-weight: normal;
-}
-.sort-btn {
-  all: unset;
-  cursor: pointer;
-  display: block;
-  width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.sort-btn:focus-visible {
-  outline: 2px solid var(--bs-primary);
-}
-td {
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  height: 27px;
-}
-td.wrap {
-  white-space: nowrap;
-}
-tr.clickable {
-  cursor: pointer;
-}
-.tabular {
-  font-variant-numeric: tabular-nums;
-}
-.tone-danger {
-  color: var(--bs-danger-text-emphasis);
-  font-weight: 600;
-}
-.tone-warning {
-  color: var(--bs-warning-text-emphasis);
-  font-weight: 600;
-}
-.tone-success {
-  color: var(--bs-success-text-emphasis);
-}
-.tone-muted {
-  color: var(--bs-secondary-color);
-}
-.columns-menu {
-  position: relative;
-}
-.columns-menu summary {
-  list-style: none;
-}
-.columns-menu .menu {
-  position: absolute;
-  right: 0;
-  z-index: 10;
-  background: var(--bs-body-bg);
-  min-width: 220px;
-  max-height: 360px;
-  overflow: auto;
-}
-</style>

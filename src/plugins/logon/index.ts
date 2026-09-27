@@ -152,7 +152,7 @@ export const logon: Plugin = {
   name: 'logon',
   label: 'Account Logon',
   category: 'Account',
-  icon: 'box-arrow-in-right',
+  icon: 'log-in',
   description:
     'Logon, logoff and failed logons from the Security log. Sessions are paired by Logon ID; administrator logons are those with a 4672 (special privileges) for the same Logon ID.',
   sources: [{ channel: 'Security', provider: SECURITY, ids: [4624, 4625, 4634, 4647, 4648, 4672, 4778, 4779, 4800, 4801] }],

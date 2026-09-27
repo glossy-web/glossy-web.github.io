@@ -34,7 +34,7 @@ export const showAll: Plugin = {
   name: 'showAll',
   label: 'All Events',
   category: 'All',
-  icon: 'list-ul',
+  icon: 'list',
   description: 'Every loaded record with its key fields. Filter any column, search all columns, open a row for the full record and its XML.',
   sources: [],
   analyze(ctx) {

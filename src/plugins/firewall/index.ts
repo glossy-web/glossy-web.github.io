@@ -187,7 +187,7 @@ export const firewall: Plugin = {
   name: 'firewall',
   label: 'Firewall',
   category: 'System',
-  icon: 'bricks',
+  icon: 'brick-wall',
   description:
     'Windows Defender Firewall rule and profile changes (Windows 10 and Windows 11 event IDs). Rules are replayed to show their state at the end of the log; disabling the firewall and new inbound allow rules are highlighted.',
   sources: SOURCES,
