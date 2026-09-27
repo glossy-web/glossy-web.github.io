@@ -1,5 +1,5 @@
 import type { EvtxEvent } from '@/core/evtx/types';
-import type { Column, Plugin, SourceSpec } from '@/core/plugin';
+import type { Column, Plugin, PluginContext, SourceSpec, Tone } from '@/core/plugin';
 import { account, isUserWritablePath } from '@/core/format';
 import { d, eventView, groupBy, SECURITY, text, withBase, type EventRow } from '../common';
 
@@ -73,8 +73,16 @@ function toRow(e: EvtxEvent): ServiceRow {
   }
 }
 
+const serviceTone = (r: ServiceRow): Tone | undefined => (r.flags ? 'danger' : r.action.startsWith('Service installed') ? 'warning' : undefined);
+
+/** Who installed or controlled the service: the 4697 subject, or the SCM event's own user SID. */
+function installer(e: EvtxEvent, ctx: PluginContext): string {
+  if (e.eventId === 4697) return account(e.data['SubjectDomainName'], e.data['SubjectUserName']);
+  return ctx.sidName(e.userSid) || e.userSid;
+}
+
 const eventColumns: Column<ServiceRow>[] = withBase<ServiceRow>([
-  text('action', 'Action', r => r.action, { size: 200, facet: true, tone: r => (r.flags ? 'danger' : r.action.startsWith('Service installed') ? 'warning' : undefined) }),
+  text('action', 'Action', r => r.action, { size: 200, facet: true, tone: serviceTone }),
   text('service', 'Service', r => r.service, { size: 220 }),
   text('image', 'Image path', r => r.image, { size: 380, kind: 'mono' }),
   text('flags', 'Flags', r => r.flags, { size: 180, facet: true, tone: r => (r.flags ? 'danger' : undefined) }),
@@ -157,7 +165,18 @@ export const services: Plugin = {
       ],
       charts: [{ kind: 'timeline', title: 'Service installs over time', series: [{ name: 'Installs', ts: installs.map(r => r.event.ts) }] }],
       views: [
-        eventView('events', 'Events', rows, eventColumns),
+        {
+          ...eventView('events', 'Events', rows, eventColumns),
+          timeline: r =>
+            r.event.eventId === 7036
+              ? undefined
+              : {
+                  title: `${r.action}: ${r.service}`,
+                  detail: [r.image, r.flags && `Flags: ${r.flags}`, r.startType, r.detail].filter(Boolean).join(' · '),
+                  users: [installer(r.event, ctx)],
+                  tone: serviceTone(r),
+                },
+        },
         { id: 'services', label: 'Services', rows: summaries(all), columns: summaryColumns, event: r => r.sample, sort: { id: 'installed', desc: true } },
       ],
       notes: [],

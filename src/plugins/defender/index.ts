@@ -176,9 +176,11 @@ function protectionRow(e: EvtxEvent): ProtectionRow {
   return { ...base, previous, current, setting, change: setting.split('\\').pop() ?? setting };
 }
 
+const protectionTone = (r: ProtectionRow): Tone | undefined => (r.risk === 'Protection disabled' || r.risk === 'Exclusion added' ? 'danger' : r.risk ? 'warning' : undefined);
+
 const protectionColumns: Column<ProtectionRow>[] = withBase<ProtectionRow>([
   text('action', 'Action', r => r.action, { size: 260, facet: true }),
-  text('risk', 'Assessment', r => r.risk, { size: 200, facet: true, tone: r => (r.risk === 'Protection disabled' || r.risk === 'Exclusion added' ? 'danger' : r.risk ? 'warning' : undefined) }),
+  text('risk', 'Assessment', r => r.risk, { size: 200, facet: true, tone: protectionTone }),
   text('change', 'Change', r => r.change, { size: 280 }),
   text('previous', 'Old value', r => r.previous, { size: 360, kind: 'mono' }),
   text('current', 'New value', r => r.current, { size: 360, kind: 'mono' }),
@@ -219,9 +221,15 @@ export const defender: Plugin = {
         },
       ],
       views: [
-        eventView('detections', 'Detections', detections, detectionColumns),
+        {
+          ...eventView('detections', 'Detections', detections, detectionColumns),
+          timeline: r => ({ title: `Defender: ${r.action}${r.threat ? ` (${r.threat})` : ''}`, detail: [r.paths, r.process, r.outcome].filter(Boolean).join(' · '), users: [r.user], tone: detectionTone(r) }),
+        },
         { id: 'threats', label: 'Threats', rows: threatRows, columns: threatColumns, event: r => r.sample, sort: { id: 'last', desc: true } },
-        eventView('protection', 'Protection changes', protection, protectionColumns),
+        {
+          ...eventView('protection', 'Protection changes', protection, protectionColumns),
+          timeline: r => ({ title: `Defender: ${r.action}${r.change ? ` (${r.change})` : ''}`, detail: r.risk, tone: protectionTone(r) }),
+        },
       ],
       notes: [],
     };

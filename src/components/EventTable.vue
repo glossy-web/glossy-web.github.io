@@ -33,6 +33,14 @@
         <button class="btn btn-sm btn-outline-secondary" :disabled="rows.length === 0" @click="exportCsv">
           <i class="bi bi-download"></i> CSV
         </button>
+        <button
+          class="btn btn-sm btn-outline-secondary"
+          :disabled="rows.length === 0 || !timeColumns.length"
+          title="Timesketch JSONL (UTC)"
+          @click="exportJsonl"
+        >
+          <i class="bi bi-download"></i> JSONL
+        </button>
       </div>
     </div>
 
@@ -87,7 +95,7 @@
           <tr
             v-for="item in virtualItems"
             :key="String(item.key)"
-            :class="{ clickable: !!view.event }"
+            :class="{ clickable: !!(view.event || view.pivot) }"
             @click="open(rows[item.index]!.original)"
           >
             <td
@@ -125,29 +133,28 @@ import {
   useTable,
 } from '@tanstack/vue-table';
 import { useVirtualizer } from '@tanstack/vue-virtual';
-import type { Column, RowDetail, View } from '@/core/plugin';
+import type { Column, Pivot, RowDetail, View } from '@/core/plugin';
 import type { EvtxEvent } from '@/core/evtx/types';
-import { formatIso, formatTime, UTC } from '@/core/time';
-import { download, toCsv } from '@/core/csv';
+import { download } from '@/core/csv';
+import { cellText as textOf, tableToCsv, tableToJsonl, type TableSnapshot } from '@/core/tableExport';
 import { eventStore } from '@/core/store';
 
 type Row = any; // rows are plugin-defined objects
 type AnyColumn = Column<Row>;
 
-const props = defineProps<{ view: View<Row>; zone: string; exportName: string }>();
-const emit = defineEmits<{ open: [event: EvtxEvent, detail: RowDetail | undefined] }>();
+const props = defineProps<{
+  view: View<Row>;
+  zone: string;
+  exportName: string;
+  /** Column filters to start with (column id → value), e.g. from a pivot. */
+  filters?: Record<string, string>;
+}>();
+const emit = defineEmits<{ open: [event: EvtxEvent, detail: RowDetail | undefined]; pivot: [target: Pivot] }>();
 
 const ROW_HEIGHT = 27;
 
 const defs = computed<Record<string, AnyColumn>>(() => Object.fromEntries(props.view.columns.map(c => [c.id, c])));
 const labelOf = (id: string) => defs.value[id]?.label ?? id;
-
-function textOf(row: Row, col: AnyColumn, zone: string): string {
-  const value = col.value(row);
-  if (col.kind === 'time') return typeof value === 'number' ? formatTime(value, zone) : '';
-  if (col.text) return col.text(row);
-  return value === null || value === undefined ? '' : String(value);
-}
 
 const cellText = (row: Row, id: string) => {
   const col = defs.value[id];
@@ -229,6 +236,7 @@ const table = useTable({
   initialState: {
     sorting: [{ id: props.view.sort?.id ?? props.view.columns[0]?.id ?? '', desc: props.view.sort?.desc ?? false }],
     columnVisibility: Object.fromEntries(props.view.columns.filter(c => c.hidden).map(c => [c.id, false])),
+    columnFilters: Object.entries(props.filters ?? {}).map(([id, value]) => ({ id, value })),
   },
   enableSortingRemoval: false,
   globalFilterFn: searchFilter as never,
@@ -284,38 +292,33 @@ function ariaSort(sorted: false | 'asc' | 'desc'): 'ascending' | 'descending' | 
 }
 
 function open(row: Row) {
+  const target = props.view.pivot?.(row);
+  if (target) return emit('pivot', target);
   const event = props.view.event?.(row);
   if (event) emit('open', event, props.view.detail?.(row));
 }
 
+const timeColumns = computed(() => props.view.columns.filter(c => c.kind === 'time'));
+
+function snapshot(): TableSnapshot<Row> {
+  return {
+    columns: visibleColumns.value.map((c: { id: string }) => defs.value[c.id]!).filter(Boolean),
+    rows: rows.value.map(r => r.original),
+    event: props.view.event,
+    sourceName: e => eventStore.sources.find(s => s.index === e.src)?.name ?? '',
+  };
+}
+
+const fileName = (ext: string) => `glossy_${props.exportName}_${new Date().toISOString().replace(/[-:]/g, '').slice(0, 15)}.${ext}`;
+
 function exportCsv() {
-  const cols = visibleColumns.value.map((c: { id: string }) => defs.value[c.id]!).filter(Boolean);
-  const zone = props.zone;
-  const header = cols.map(c => (c.kind === 'time' ? `${c.label} (${zone === UTC ? 'UTC' : zone})` : c.label));
-  // Every exported row carries enough to find its record again, unless the view already shows it.
-  const shown = new Set(cols.map(c => c.id));
-  const trace: [string, string, (e: EvtxEvent) => string][] = props.view.event
-    ? ([
-        ['computer', 'Computer', e => e.computer],
-        ['channel', 'Channel', e => e.channel],
-        ['provider', 'Provider', e => e.provider],
-        ['eventId', 'EventID', e => String(e.eventId)],
-        ['recordId', 'EventRecordID', e => String(e.recordId)],
-        ['sourceFile', 'SourceFile', e => eventStore.sources.find(s => s.index === e.src)?.name ?? ''],
-      ] as [string, string, (e: EvtxEvent) => string][]).filter(([id]) => !shown.has(id))
-    : [];
-  header.push(...trace.map(([, label]) => label));
-  const body = rows.value.map(r => {
-    const out = cols.map(c => {
-      const v = c.value(r.original);
-      return c.kind === 'time' ? (typeof v === 'number' ? formatIso(v, zone) : '') : textOf(r.original, c, zone);
-    });
-    const e = props.view.event?.(r.original);
-    for (const [, , get] of trace) out.push(e ? get(e) : '');
-    return out;
-  });
-  const stamp = new Date().toISOString().replace(/[-:]/g, '').slice(0, 15);
-  download(`glossy_${props.exportName}_${stamp}.csv`, toCsv(header, body));
+  download(fileName('csv'), tableToCsv(snapshot(), props.zone));
+}
+
+function exportJsonl() {
+  const { text, skipped } = tableToJsonl(snapshot(), timeColumns.value, `glossy:${props.exportName}`);
+  if (skipped) alert(`${skipped.toLocaleString()} row(s) without a time were left out of the JSONL file.`);
+  if (text) download(fileName('jsonl'), text, 'application/x-ndjson;charset=utf-8');
 }
 </script>
 

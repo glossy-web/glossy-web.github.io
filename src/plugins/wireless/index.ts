@@ -122,7 +122,10 @@ export const wireless: Plugin = {
       ],
       views: [
         { id: 'networks', label: 'Networks', rows: networks, columns: networkColumns, event: r => r.sample, sort: { id: 'last', desc: true } },
-        eventView('events', 'Events', rows, eventColumns),
+        {
+          ...eventView('events', 'Events', rows, eventColumns),
+          timeline: r => ({ title: `Wi-Fi ${r.action.toLowerCase()}: ${r.ssid}`, detail: [r.bssid, r.auth, r.cipher, r.detail].filter(Boolean).join(' · ') }),
+        },
       ],
       notes: [],
     };

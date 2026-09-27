@@ -1,5 +1,6 @@
 import type { EvtxEvent } from '@/core/evtx/types';
 import type { Column, Plugin, PluginContext, SourceSpec, Tone } from '@/core/plugin';
+import { basename } from '@/core/format';
 import { eventView, pick, text, withBase, type EventRow } from '../common';
 import { assembleScriptBlocks, decodeEncodedCommand, indicators, keyValues, type ScriptBlock } from './analysis';
 
@@ -79,6 +80,8 @@ function hostRow(e: EvtxEvent): HostRow {
 
 /** Engine 2.0 lacks script block logging and AMSI; starting it is a known way to evade both. */
 const isDowngrade = (r: HostRow) => /^2\./.test(r.engineVersion);
+
+const hostTone = (r: HostRow): Tone | undefined => (isDowngrade(r) ? 'danger' : r.indicators.length ? 'warning' : undefined);
 
 const hostColumns: Column<HostRow>[] = withBase<HostRow>([
   text('action', 'Action', r => r.action, { size: 220, facet: true }),
@@ -181,14 +184,31 @@ export const powershell: Plugin = {
         {
           ...eventView('blocks', 'Script blocks', blocks, blockColumns),
           detail: r => ({ title: `Script block${r.block.total > 1 ? ` (${r.block.events.length} of ${r.block.total} parts)` : ''}`, text: r.block.text }),
+          timeline: r => ({
+            title: `PowerShell script block${r.block.path ? `: ${basename(r.block.path)}` : ''}`,
+            detail: [r.block.flagged && 'Flagged by PowerShell', r.indicators.join(', '), preview(r.block.text, 200)].filter(Boolean).join(' · '),
+            users: [r.user],
+            tone: blockTone(r),
+          }),
         },
         {
           ...eventView('host', 'Engine & host', hosts, hostColumns),
           detail: r => (r.decoded ? { title: 'Decoded -EncodedCommand', text: r.decoded } : r.hostApplication ? { title: 'Host application', text: r.hostApplication } : undefined),
+          // Engine starts only: they carry the host command line.
+          timeline: r =>
+            r.event.eventId === 400
+              ? {
+                  title: `PowerShell engine started${isDowngrade(r) ? ` (version ${r.engineVersion})` : ''}`,
+                  detail: [r.indicators.join(', '), r.decoded ? `decoded: ${preview(r.decoded, 200)}` : r.hostApplication].filter(Boolean).join(' · '),
+                  tone: hostTone(r),
+                }
+              : undefined,
         },
         {
           ...eventView('pipeline', 'Pipeline execution', pipelines, pipelineColumns),
           detail: r => ({ title: 'Command and details', text: [r.command, r.details].filter(Boolean).join('\n\n') }),
+          // Module logging is voluminous; only commands with indicators reach the timeline.
+          timeline: r => (r.indicators.length ? { title: `PowerShell command: ${preview(r.command, 80)}`, detail: r.indicators.join(', '), users: [r.user], tone: 'warning' } : undefined),
         },
       ],
       notes,

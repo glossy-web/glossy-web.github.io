@@ -25,7 +25,7 @@
             class="nav-link"
             :class="{ active: currentView?.id === v.id }"
             :aria-selected="currentView?.id === v.id"
-            @click="viewId = v.id"
+            @click="showView(v.id)"
           >
             {{ v.label }} <span class="badge text-bg-light border ms-1">{{ v.rows.length.toLocaleString() }}</span>
           </button>
@@ -33,11 +33,13 @@
       </ul>
       <EventTable
         v-if="currentView"
-        :key="`${plugin.name}:${currentView.id}:${revision}`"
+        :key="`${plugin.name}:${currentView.id}:${revision}:${JSON.stringify(preset)}`"
         :view="currentView"
         :zone="zone"
         :export-name="`${plugin.name}_${currentView.id}`"
+        :filters="preset"
         @open="(event, extra) => (detail = { event, extra })"
+        @pivot="target => showView(target.view, target.filters)"
       />
     </section>
 
@@ -64,6 +66,13 @@ const props = defineProps<{ name: string; zone: string; dark: boolean }>();
 const plugin = computed(() => pluginByName.get(props.name) ?? pluginByName.get('showAll')!);
 const detail = shallowRef<{ event: EvtxEvent; extra: RowDetail | undefined } | null>(null);
 const viewId = ref('');
+/** Column filters handed to the table when a pivot opened the view. */
+const preset = shallowRef<Record<string, string>>();
+
+function showView(id: string, filters?: Record<string, string>) {
+  viewId.value = id;
+  preset.value = filters;
+}
 
 const options = computed<Record<string, boolean>>(() => {
   const saved = pluginOptions.value[plugin.value.name] ?? {};

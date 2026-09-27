@@ -1,5 +1,5 @@
 import type { EvtxEvent } from '@/core/evtx/types';
-import type { Column, Plugin, SourceSpec } from '@/core/plugin';
+import type { Column, Plugin, SourceSpec, Tone } from '@/core/plugin';
 import { account } from '@/core/format';
 import { parseSystemTime } from '@/core/normalize';
 import { formatDuration } from '@/core/time';
@@ -42,6 +42,9 @@ function toRow(e: EvtxEvent): TimeRow {
   return { event: e, source: 'System (Kernel-General 1)', previous, next, delta: next - previous, by: '', process: '', reason: d(e, 'Reason') && `Reason ${d(e, 'Reason')}` };
 }
 
+const deltaText = (r: TimeRow) => (Number.isFinite(r.delta) ? `${r.delta >= 0 ? '+' : ''}${formatDuration(r.delta)}` : '');
+const deltaTone = (r: TimeRow): Tone | undefined => (Math.abs(r.delta) >= 3600000 ? 'danger' : Math.abs(r.delta) >= 60000 ? 'warning' : undefined);
+
 const eventColumns: Column<TimeRow>[] = withBase<TimeRow>([
   text('source', 'Source', r => r.source, { size: 190, facet: true }),
   { id: 'previous', label: 'Previous time', kind: 'time', value: r => r.previous, size: 190 },
@@ -51,9 +54,9 @@ const eventColumns: Column<TimeRow>[] = withBase<TimeRow>([
     label: 'Change',
     kind: 'number',
     value: r => r.delta,
-    text: r => (Number.isFinite(r.delta) ? `${r.delta >= 0 ? '+' : ''}${formatDuration(r.delta)}` : ''),
+    text: deltaText,
     size: 150,
-    tone: r => (Math.abs(r.delta) >= 3600000 ? 'danger' : Math.abs(r.delta) >= 60000 ? 'warning' : undefined),
+    tone: deltaTone,
   },
   text('by', 'Changed by', r => r.by, { size: 190, facet: true }),
   text('process', 'Process', r => r.process, { size: 280, facet: true }),
@@ -83,7 +86,17 @@ export const timeChange: Plugin = {
         { label: 'Largest jump backward', value: backward ? formatDuration(-backward.delta) : '–', tone: backward && backward.delta <= -60000 ? 'warning' : undefined },
       ],
       charts: [],
-      views: [eventView('events', 'Changes', rows, eventColumns)],
+      views: [
+        {
+          ...eventView('events', 'Changes', rows, eventColumns),
+          timeline: r => ({
+            title: `System time changed ${deltaText(r)}`.trim(),
+            detail: [r.source, r.process, r.reason].filter(Boolean).join(' · '),
+            users: [r.by],
+            tone: deltaTone(r),
+          }),
+        },
+      ],
       notes:
         opts['hideSmall'] && all.length > rows.length
           ? [{ tone: 'info', text: `${(all.length - rows.length).toLocaleString()} adjustments under one second (time synchronization) are hidden.` }]

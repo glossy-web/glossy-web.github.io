@@ -1,5 +1,5 @@
 import type { EvtxEvent } from '@/core/evtx/types';
-import type { Column, Plugin, SourceSpec } from '@/core/plugin';
+import type { Column, Plugin, SourceSpec, Tone } from '@/core/plugin';
 import { basename, ranking } from '@/core/format';
 import { eventView, groupBy, pick, text, withBase, type EventRow } from '../common';
 
@@ -94,12 +94,15 @@ function toRow(e: EvtxEvent): ErrorRow {
   }
 }
 
+/** Access violations and heap/stack corruption are the crash types exploitation leaves behind. */
+const exceptionTone = (r: ErrorRow): Tone | undefined => (/c0000005|c0000409|c0000374/i.test(r.exception) ? 'warning' : undefined);
+
 const eventColumns: Column<ErrorRow>[] = withBase<ErrorRow>([
   text('kind', 'Type', r => r.kind, { size: 170, facet: true }),
   text('app', 'Application', r => r.app, { size: 200, facet: true }),
   text('version', 'Version', r => r.version, { size: 110 }),
   text('module', 'Faulting module', r => r.module, { size: 200 }),
-  text('exception', 'Exception', r => r.exception, { size: 220, facet: true, tone: r => (/c0000005|c0000409|c0000374/i.test(r.exception) ? 'warning' : undefined) }),
+  text('exception', 'Exception', r => r.exception, { size: 220, facet: true, tone: exceptionTone }),
   text('path', 'Path', r => r.path, { size: 340 }),
   text('detail', 'Detail', r => r.detail, { size: 260 }),
 ]);
@@ -153,7 +156,10 @@ export const applicationErrors: Plugin = {
       ],
       charts: [{ kind: 'ranking', title: 'Most frequent faulting applications', items: ranking(withApp.map(r => r.app || basename(r.path)), 10) }],
       views: [
-        eventView('events', 'Events', rows, eventColumns),
+        {
+          ...eventView('events', 'Events', rows, eventColumns),
+          timeline: r => ({ title: `${r.kind}: ${r.app}`, detail: [r.version, r.module && `module ${r.module}`, r.exception, r.path, r.detail].filter(Boolean).join(' · '), tone: exceptionTone(r) }),
+        },
         { id: 'apps', label: 'Applications', rows: apps, columns: appColumns, event: r => r.sample, sort: { id: 'count', desc: true } },
       ],
       notes: [],

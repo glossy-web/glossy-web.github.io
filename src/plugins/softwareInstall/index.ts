@@ -1,5 +1,5 @@
 import type { EvtxEvent } from '@/core/evtx/types';
-import type { Column, Plugin, PluginContext, SourceSpec } from '@/core/plugin';
+import type { Column, Plugin, PluginContext, SourceSpec, Tone } from '@/core/plugin';
 import { account, clean } from '@/core/format';
 import { messageCode } from '@/core/lookups';
 import { d, eventView, groupBy, SECURITY, text, withBase, type EventRow } from '../common';
@@ -58,10 +58,12 @@ function toRow(e: EvtxEvent, ctx: PluginContext): InstallRow | null {
       const m = /^Product:\s*(.*?)\s*--\s*(.*)$/s.exec(at(e, 0));
       return { event: e, kind, product: m?.[1] ?? at(e, 0), version: '', publisher: '', status: m?.[2] ?? '', user, source: 'MsiInstaller', productCode: productCode(e.data['Binary']) };
     }
+    // 1033/1034 carry the operation's result: 0 is success, anything else an MSI error code (e.g. 1603).
     const status = at(e, 3);
+    const failed = status !== '' && status !== '0';
     return {
       event: e,
-      kind,
+      kind: failed && e.eventId === 1033 ? 'Install failed' : failed && e.eventId === 1034 ? 'Removal failed' : kind,
       product: at(e, 0),
       version: at(e, 1),
       publisher: at(e, 4),
@@ -94,8 +96,13 @@ function toRow(e: EvtxEvent, ctx: PluginContext): InstallRow | null {
   };
 }
 
+const installTone = (r: InstallRow): Tone | undefined => (r.kind.endsWith('failed') ? 'danger' : r.kind === 'Removed' ? 'warning' : undefined);
+
+/** Windows Installer logs each operation twice: 1033/1034/1035 with details and status, 117xx as a summary line. */
+const isMsiSummary = (r: InstallRow) => r.source === 'MsiInstaller' && r.event.eventId >= 11000;
+
 const eventColumns: Column<InstallRow>[] = withBase<InstallRow>([
-  text('kind', 'Action', r => r.kind, { size: 130, facet: true, tone: r => (r.kind.endsWith('failed') ? 'danger' : r.kind === 'Removed' ? 'warning' : undefined) }),
+  text('kind', 'Action', r => r.kind, { size: 130, facet: true, tone: installTone }),
   text('product', 'Product', r => r.product, { size: 300 }),
   text('version', 'Version', r => r.version, { size: 120 }),
   text('publisher', 'Publisher', r => r.publisher, { size: 200, facet: true }),
@@ -157,14 +164,14 @@ export const softwareInstall: Plugin = {
     );
     // Windows Installer logs each operation twice (1033/1034 with details, 11707/11724 as a summary line),
     // so counts use one event per operation.
-    const counted = rows.filter(r => !(r.source === 'MsiInstaller' && (r.event.eventId === 11707 || r.event.eventId === 11724)));
+    const counted = rows.filter(r => !isMsiSummary(r));
     const installs = counted.filter(r => r.kind === 'Installed');
     const removals = counted.filter(r => r.kind === 'Removed');
     return {
       stats: [
         { label: 'Installs', value: installs.length },
         { label: 'Removals', value: removals.length },
-        { label: 'Failed', value: rows.filter(r => r.kind.endsWith('failed')).length },
+        { label: 'Failed', value: counted.filter(r => r.kind.endsWith('failed')).length },
         { label: 'Products', value: products.length },
       ],
       charts: [
@@ -178,7 +185,13 @@ export const softwareInstall: Plugin = {
         },
       ],
       views: [
-        eventView('events', 'Events', rows, eventColumns),
+        {
+          ...eventView('events', 'Events', rows, eventColumns),
+          timeline: r =>
+            isMsiSummary(r)
+              ? undefined
+              : { title: `Software ${r.kind.toLowerCase()}: ${r.product}`, detail: [r.version, r.publisher, r.status].filter(Boolean).join(' · '), users: [r.user], tone: installTone(r) },
+        },
         { id: 'products', label: 'Products', rows: products, columns: productColumns, event: r => r.sample, sort: { id: 'installed', desc: true } },
       ],
       notes: [],

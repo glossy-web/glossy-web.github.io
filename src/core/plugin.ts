@@ -28,7 +28,32 @@ export interface View<R = unknown> {
   event?: (row: R) => EvtxEvent | undefined;
   /** Text shown above the record when a row is opened (e.g. a script reassembled from several events). */
   detail?: (row: R) => RowDetail | undefined;
+  /** How the row appears in the unified timeline; rows mapped to undefined stay out of it. */
+  timeline?: (row: R) => TimelineEntry | undefined;
+  /** Clicking the row opens another view of the same page with column filters set. */
+  pivot?: (row: R) => Pivot | undefined;
   sort?: { id: string; desc?: boolean };
+}
+
+/**
+ * One row's contribution to the unified timeline, modelled on EvtxECmd maps:
+ * a short description, free-text details, and the user and remote host involved.
+ */
+export interface TimelineEntry {
+  title: string;
+  detail?: string;
+  /** Accounts involved (DOMAIN\user); empty values are dropped. */
+  users?: string[];
+  /** Remote IP address or host name. */
+  remote?: string;
+  /** 'danger' or 'warning' marks the entry as highlighted. */
+  tone?: Tone;
+}
+
+export interface Pivot {
+  view: string;
+  /** Column id → filter value. */
+  filters: Record<string, string>;
 }
 
 export interface RowDetail {

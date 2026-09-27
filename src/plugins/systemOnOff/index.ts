@@ -177,7 +177,10 @@ export const systemOnOff: Plugin = {
           ],
         },
       ],
-      views: [eventView('events', 'Events', rows, eventColumns), eventView('sessions', 'Boot sessions', sessionRows, sessionColumns)],
+      views: [
+        { ...eventView('events', 'Events', rows, eventColumns), timeline: r => ({ title: r.action, detail: r.detail, tone: tone(r) }) },
+        eventView('sessions', 'Boot sessions', sessionRows, sessionColumns),
+      ],
       notes: [],
     };
   },

@@ -172,7 +172,18 @@ export const processExecution: Plugin = {
       ],
       charts: [{ kind: 'ranking', title: 'Most executed', items: ranking(created.map(r => basename(r.image)), 12) }],
       views: [
-        eventView('events', 'Events', rows, eventColumns),
+        {
+          ...eventView('events', 'Events', rows, eventColumns),
+          timeline: r =>
+            r.action === 'Terminated'
+              ? undefined
+              : {
+                  title: `${r.action === 'Created' ? 'Process created' : r.action}: ${basename(r.image)}`,
+                  detail: [r.commandLine || r.image, r.parent && `parent ${basename(r.parent)}`].filter(Boolean).join(' · '),
+                  users: [r.user],
+                  tone: isUserWritablePath(r.image) ? 'warning' : undefined,
+                },
+        },
         { id: 'executables', label: 'Executables', rows: images, columns: imageColumns, event: r => r.sample, sort: { id: 'count' } },
       ],
       notes,
