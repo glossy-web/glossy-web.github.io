@@ -1,103 +1,103 @@
 <template>
-  <aside class="glossy-sidebar bg-white border-end">
-    <div class="sidebar-header px-3 py-2 fw-bold text-muted small text-uppercase">
-      Analysis Plugins
-    </div>
-    <ul class="nav flex-column">
+  <nav class="sidebar border-end" aria-label="Analysis">
+    <ul class="list-unstyled mb-0 py-2">
       <li>
-        <a class="nav-link sidebar-item"
-           :class="{ active: activePlugin === '__index' }"
-           href="#" @click.prevent="$emit('select', '__index')">
-          <i class="fa fa-dashboard me-2"></i>Overview
+        <a href="#" class="item" :class="{ active: active === '__overview' }" @click.prevent="$emit('select', '__overview')">
+          <i class="bi bi-clipboard-data" aria-hidden="true"></i><span>Overview</span>
         </a>
       </li>
-      <li v-for="item in menu" :key="item.name">
-        <template v-if="item.children">
-          <a class="nav-link sidebar-category" data-bs-toggle="collapse"
-             :href="'#cat_' + sanitize(item.name)" role="button">
-            <i :class="'fa ' + item.icon + ' me-2'"></i>{{ item.label }}
-          </a>
-          <div class="collapse" :class="{ show: isCategoryActive(item) }"
-               :id="'cat_' + sanitize(item.name)">
-            <ul class="nav flex-column ms-3">
-              <li v-for="child in item.children" :key="child.name">
-                <a class="nav-link sidebar-item"
-                   :class="{ active: activePlugin === child.name }"
-                   href="#" @click.prevent="$emit('select', child.name)">
-                  <i :class="'fa ' + child.icon + ' me-2'"></i>{{ child.label }}
-                </a>
-              </li>
-            </ul>
-          </div>
-        </template>
-        <template v-else>
-          <a class="nav-link sidebar-item"
-             :class="{ active: activePlugin === item.name }"
-             href="#" @click.prevent="$emit('select', item.name)">
-            <i :class="'fa ' + item.icon + ' me-2'"></i>{{ item.label }}
-          </a>
-        </template>
+      <li>
+        <a href="#" class="item" :class="{ active: active === 'showAll' }" @click.prevent="$emit('select', 'showAll')">
+          <i class="bi bi-list-ul" aria-hidden="true"></i><span>All Events</span>
+          <span class="count">{{ total.toLocaleString() }}</span>
+        </a>
+      </li>
+      <li v-for="cat in groups" :key="cat.id" class="mt-2">
+        <div class="category"><i :class="`bi bi-${cat.icon}`" aria-hidden="true"></i>{{ cat.label }}</div>
+        <ul class="list-unstyled">
+          <li v-for="p in cat.plugins" :key="p.name">
+            <a
+              href="#"
+              class="item"
+              :class="{ active: active === p.name, empty: !counts[p.name] }"
+              :title="counts[p.name] ? '' : 'No matching events in the loaded logs'"
+              @click.prevent="$emit('select', p.name)"
+            >
+              <i :class="`bi bi-${p.icon}`" aria-hidden="true"></i><span>{{ p.label }}</span>
+              <span class="count">{{ (counts[p.name] ?? 0).toLocaleString() }}</span>
+            </a>
+          </li>
+        </ul>
       </li>
     </ul>
-  </aside>
+  </nav>
 </template>
 
-<script lang="ts">
-import { defineComponent, PropType } from 'vue';
-import { pluginMenu } from '@/core/settings';
+<script setup lang="ts">
+import { computed } from 'vue';
+import { CATEGORIES } from '@/core/settings';
+import { eventStore } from '@/core/store';
+import { plugins } from '@/plugins';
 
-export default defineComponent({
-  name: 'GlossySidebar',
-  props: {
-    activePlugin: { type: String, required: true },
-  },
-  emits: ['select'],
-  setup(props) {
-    const menu = pluginMenu;
+defineProps<{ active: string }>();
+defineEmits<{ select: [name: string] }>();
 
-    function sanitize(name: string): string {
-      return name.replace(/[^a-zA-Z0-9]/g, '_');
-    }
-
-    function isCategoryActive(cat: { name: string; children?: Array<{ name: string }> }): boolean {
-      return cat.children?.some(c => c.name === props.activePlugin) ?? false;
-    }
-
-    return { menu, sanitize, isCategoryActive };
-  },
+const groups = computed(() =>
+  CATEGORIES.map(c => ({ ...c, plugins: plugins.filter(p => p.category === c.id) })).filter(c => c.plugins.length),
+);
+const total = computed(() => {
+  void eventStore.version.value;
+  return eventStore.size;
+});
+const counts = computed(() => {
+  void eventStore.version.value;
+  return Object.fromEntries(plugins.map(p => [p.name, eventStore.count(p.sources)]));
 });
 </script>
 
 <style scoped>
-.glossy-sidebar {
-  width: 250px;
-  min-width: 250px;
-  min-height: calc(100vh - 56px);
+.sidebar {
+  width: 240px;
+  min-width: 240px;
   overflow-y: auto;
   font-size: 13px;
+  background: var(--bs-body-bg);
 }
-.sidebar-header {
-  border-bottom: 1px solid #dee2e6;
-}
-.sidebar-category {
-  color: #495057;
+.category {
+  padding: 6px 16px 2px;
+  font-size: 11px;
   font-weight: 600;
-  padding: 8px 16px;
-  border-bottom: 1px solid #f0f0f0;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--bs-secondary-color);
 }
-.sidebar-item {
-  color: #6c757d;
+.category .bi {
+  margin-right: 6px;
+}
+.item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   padding: 5px 16px;
+  color: var(--bs-body-color);
+  text-decoration: none;
   border-left: 3px solid transparent;
 }
-.sidebar-item:hover {
-  background: #f8f9fa;
-  color: #212529;
+.item:hover {
+  background: var(--bs-tertiary-bg);
 }
-.sidebar-item.active {
-  color: #0d6efd;
-  background: #e7f1ff;
-  border-left-color: #0d6efd;
+.item.active {
+  background: var(--bs-primary-bg-subtle);
+  border-left-color: var(--bs-primary);
   font-weight: 600;
+}
+.item.empty span:not(.count) {
+  color: var(--bs-secondary-color);
+}
+.count {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--bs-secondary-color);
+  font-variant-numeric: tabular-nums;
 }
 </style>

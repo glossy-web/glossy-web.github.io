@@ -1,101 +1,130 @@
-import { PluginBase, type TableColumn, type DashboardData, type ChartConfig, type FilterDef } from '@/core/plugin';
 import type { EvtxEvent } from '@/core/evtx/types';
-import dayjs from 'dayjs';
+import type { Column, Plugin, SourceSpec } from '@/core/plugin';
+import { d, eventView, groupBy, pick, text, withBase, type EventRow } from '../common';
 
-export class WirelessPlugin extends PluginBase {
-  name = 'wireless';
-  category = 'Hardware';
-  label = 'Wireless Connect';
-  description = 'Wi-Fi network connection history';
-  icon = 'fa-wifi';
-  providers = ['Microsoft-Windows-WLAN-AutoConfig'];
-  eventIds = [8000, 8001, 8002, 8003, 11000, 11001, 11002, 11004, 11005, 11010];
+const WLAN = 'Microsoft-Windows-WLAN-AutoConfig';
+const NP = 'Microsoft-Windows-NetworkProfile';
 
-  getFilterDefs(events: EvtxEvent[]): FilterDef[] {
-    const actions = [...new Set(events.map(e => this.getAction(e)))].sort();
-    return [
-      { key: 'ssid', label: 'SSID', type: 'text', width: '160px' },
-      { key: 'bssid', label: 'BSSID', type: 'text', width: '160px' },
-      { key: 'action', label: 'Action', type: 'select', options: actions },
-    ];
-  }
+const SOURCES: SourceSpec[] = [
+  { channel: 'Microsoft-Windows-WLAN-AutoConfig/Operational', provider: WLAN, ids: [8000, 8001, 8002, 8003] },
+  { channel: 'Microsoft-Windows-NetworkProfile/Operational', provider: NP, ids: [10000, 10001] },
+];
 
-  getTableColumns(): TableColumn[] {
-    return [
-      { key: 'timestamp', label: 'Timestamp', render: e => dayjs(e.timestamp).format('YYYY-MM-DD HH:mm:ss') },
-      { key: 'eventId', label: 'Event ID' },
-      { key: 'action', label: 'Action', render: e => this.getAction(e) },
-      { key: 'ssid', label: 'SSID', render: e => (e.data['SSID'] as string) || (e.data['Ssid'] as string) || '' },
-      { key: 'bssid', label: 'BSSID', render: e => (e.data['BSSID'] as string) || (e.data['Bssid'] as string) || '' },
-      { key: 'auth', label: 'Authentication', render: e => (e.data['Authentication'] as string) || '' },
-      { key: 'cipher', label: 'Cipher', render: e => (e.data['Cipher'] as string) || '' },
-    ];
-  }
+const LABELS: Record<string, string> = {
+  8000: 'Wi-Fi connection started',
+  8001: 'Wi-Fi connected',
+  8002: 'Wi-Fi connection failed',
+  8003: 'Wi-Fi disconnected',
+  10000: 'Network connected',
+  10001: 'Network disconnected',
+};
 
-  private getAction(e: EvtxEvent): string {
-    switch (e.eventId) {
-      case 8000: return 'WLAN Service Started';
-      case 8001: return 'WLAN Service Stopped';
-      case 8002: return 'Connected to WLAN';
-      case 8003: return 'Disconnected from WLAN';
-      case 11000: return 'Wireless Association Started';
-      case 11001: return 'Wireless Association Success';
-      case 11002: return 'Wireless Association Failed';
-      case 11004: return 'Wireless Security Started';
-      case 11005: return 'Wireless Security Success';
-      case 11010: return 'Wireless Security Failed';
-      default: return `Event ${e.eventId}`;
-    }
-  }
-
-  processEvents(events: EvtxEvent[]): EvtxEvent[] {
-    return events.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
-  }
-
-  getDashboardData(events: EvtxEvent[]): DashboardData {
-    const ssids = new Map<string, number>();
-    for (const e of events) {
-      const ssid = (e.data['SSID'] as string) || (e.data['Ssid'] as string) || 'Unknown';
-      if (ssid && ssid !== 'Unknown') ssids.set(ssid, (ssids.get(ssid) || 0) + 1);
-    }
-    return {
-      summary: [
-        { title: 'Connections', value: events.filter(e => e.eventId === 8002).length },
-        { title: 'Unique SSIDs', value: ssids.size },
-        { title: 'Association Failures', value: events.filter(e => e.eventId === 11002).length },
-      ],
-      charts: [{
-        type: 'bar', title: 'Favorite Networks',
-        data: Array.from(ssids.entries()).sort((a, b) => b[1] - a[1]).slice(0, 10).map(([name, count]) => ({ name, count })),
-        xKey: 'name', yKey: 'count',
-      }],
-    };
-  }
-
-  getChartData(events: EvtxEvent[]): ChartConfig[] {
-    const byDate = new Map<string, number>();
-    for (const e of events) {
-      if (e.eventId === 8002) {
-        const d = dayjs(e.timestamp).format('YYYY-MM-DD');
-        byDate.set(d, (byDate.get(d) || 0) + 1);
-      }
-    }
-    return [{
-      type: 'bar', title: 'WiFi Connection History',
-      data: Array.from(byDate.entries()).map(([date, count]) => ({ date, count })),
-      xKey: 'date', yKey: 'count',
-    }];
-  }
-
-  getExportData(events: EvtxEvent[]): Record<string, unknown>[] {
-    return events.map(e => ({
-      Timestamp: e.timestamp.toISOString(),
-      EventID: e.eventId,
-      Action: this.getAction(e),
-      SSID: e.data['SSID'] || e.data['Ssid'] || '',
-      BSSID: e.data['BSSID'] || e.data['Bssid'] || '',
-      Authentication: e.data['Authentication'] || '',
-      Cipher: e.data['Cipher'] || '',
-    }));
-  }
+export interface WlanRow extends EventRow {
+  action: string;
+  ssid: string;
+  bssid: string;
+  profile: string;
+  auth: string;
+  cipher: string;
+  phy: string;
+  detail: string;
 }
+
+function toRow(e: EvtxEvent): WlanRow {
+  if (e.provider.toLowerCase() === NP.toLowerCase()) {
+    return { event: e, action: LABELS[e.eventId]!, ssid: '', bssid: '', profile: d(e, 'Name'), auth: '', cipher: '', phy: '', detail: [d(e, 'Description'), d(e, 'Category') && `Category ${d(e, 'Category')}`].filter(Boolean).join(' · ') };
+  }
+  return {
+    event: e,
+    action: LABELS[e.eventId]!,
+    ssid: d(e, 'SSID'),
+    bssid: pick(e, 'BSSID', 'Bssid'),
+    profile: d(e, 'ProfileName'),
+    auth: d(e, 'AuthenticationAlgorithm'),
+    cipher: d(e, 'CipherAlgorithm'),
+    phy: d(e, 'PHYType'),
+    detail: e.eventId === 8002 ? pick(e, 'FailureReason', 'ReasonCode') : e.eventId === 8003 ? d(e, 'Reason') : d(e, 'InterfaceDescription'),
+  };
+}
+
+const eventColumns: Column<WlanRow>[] = withBase<WlanRow>([
+  text('action', 'Action', r => r.action, { size: 190, facet: true, tone: r => (r.event.eventId === 8002 ? 'danger' : r.event.eventId === 8001 ? 'success' : undefined) }),
+  text('ssid', 'SSID', r => r.ssid, { size: 200, facet: true }),
+  text('profile', 'Profile / network', r => r.profile, { size: 200 }),
+  text('auth', 'Authentication', r => r.auth, { size: 130, facet: true }),
+  text('cipher', 'Cipher', r => r.cipher, { size: 100, facet: true }),
+  text('phy', 'PHY', r => r.phy, { size: 90 }),
+  text('bssid', 'BSSID', r => r.bssid, { size: 150, kind: 'mono' }),
+  text('detail', 'Detail', r => r.detail, { size: 300 }),
+]);
+
+interface NetworkSummary {
+  ssid: string;
+  computer: string;
+  first: number;
+  last: number;
+  connections: number;
+  failures: number;
+  security: string;
+  sample: EvtxEvent;
+}
+
+const networkColumns: Column<NetworkSummary>[] = [
+  text('ssid', 'SSID', r => r.ssid, { size: 220 }),
+  text('computer', 'Computer', r => r.computer, { size: 150, facet: true }),
+  { id: 'first', label: 'First connected', kind: 'time', value: r => r.first, size: 190 },
+  { id: 'last', label: 'Last connected', kind: 'time', value: r => r.last, size: 190 },
+  { id: 'connections', label: 'Connections', kind: 'number', value: r => r.connections, size: 100 },
+  { id: 'failures', label: 'Failures', kind: 'number', value: r => r.failures, size: 80 },
+  text('security', 'Security', r => r.security, { size: 200, tone: r => (/open|none|wep/i.test(r.security) ? 'warning' : undefined) }),
+];
+
+export const wireless: Plugin = {
+  name: 'wireless',
+  label: 'Wireless & Networks',
+  category: 'Hardware',
+  icon: 'wifi',
+  description: 'Wi-Fi connections, failures and disconnections (WLAN-AutoConfig 8000–8003) and network connections by name (NetworkProfile 10000/10001).',
+  sources: SOURCES,
+  analyze(ctx) {
+    const rows = ctx.select(SOURCES).map(toRow);
+    const wifi = rows.filter(r => r.ssid);
+    const networks: NetworkSummary[] = [...groupBy(wifi, r => `${r.event.computer}\u0001${r.ssid}`).values()].map(list => {
+      const connected = list.filter(r => r.event.eventId === 8001);
+      return {
+        ssid: list[0]!.ssid,
+        computer: list[0]!.event.computer,
+        first: connected[0]?.event.ts ?? NaN,
+        last: connected[connected.length - 1]?.event.ts ?? NaN,
+        connections: connected.length,
+        failures: list.filter(r => r.event.eventId === 8002).length,
+        security: [...new Set(connected.map(r => [r.auth, r.cipher].filter(Boolean).join(' / ')))].join(', '),
+        sample: (connected[connected.length - 1] ?? list[0]!).event,
+      };
+    });
+    return {
+      stats: [
+        { label: 'Wi-Fi connections', value: rows.filter(r => r.event.eventId === 8001).length },
+        { label: 'Failed connections', value: rows.filter(r => r.event.eventId === 8002).length },
+        { label: 'Networks (SSID)', value: networks.length },
+        { label: 'Network profile events', value: rows.filter(r => r.event.eventId >= 10000).length },
+      ],
+      charts: [
+        {
+          kind: 'clock',
+          title: 'Wi-Fi activity by time of day',
+          series: [
+            { name: 'Connected', ts: rows.filter(r => r.event.eventId === 8001).map(r => r.event.ts) },
+            { name: 'Disconnected', ts: rows.filter(r => r.event.eventId === 8003).map(r => r.event.ts) },
+            { name: 'Failed', ts: rows.filter(r => r.event.eventId === 8002).map(r => r.event.ts) },
+          ],
+        },
+      ],
+      views: [
+        { id: 'networks', label: 'Networks', rows: networks, columns: networkColumns, event: r => r.sample, sort: { id: 'last', desc: true } },
+        eventView('events', 'Events', rows, eventColumns),
+      ],
+      notes: [],
+    };
+  },
+};

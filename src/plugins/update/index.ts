@@ -1,87 +1,103 @@
-import { PluginBase, type TableColumn, type DashboardData, type ChartConfig, type FilterDef } from '@/core/plugin';
 import type { EvtxEvent } from '@/core/evtx/types';
-import dayjs from 'dayjs';
+import type { Column, Plugin, SourceSpec } from '@/core/plugin';
+import { d, eventView, groupBy, text, withBase, type EventRow } from '../common';
 
-export class UpdatePlugin extends PluginBase {
-  name = 'update';
-  category = 'System';
-  label = 'Windows Update';
-  description = 'Windows Update installation history';
-  icon = 'fa-refresh';
-  providers = ['Microsoft-Windows-WindowsUpdateClient'];
-  eventIds = [19, 20, 21, 22, 24, 25, 27, 31, 34, 35, 41, 42, 43, 44];
+const WU = 'Microsoft-Windows-WindowsUpdateClient';
+const SOURCES: SourceSpec[] = [{ channel: 'System', provider: WU, ids: [19, 20, 43, 44] }];
 
-  getFilterDefs(events: EvtxEvent[]): FilterDef[] {
-    const actions = [...new Set(events.map(e => this.getAction(e)))].sort();
-    return [
-      { key: 'action', label: 'Action', type: 'select', options: actions },
-    ];
-  }
+const LABELS: Record<number, string> = {
+  19: 'Installed',
+  20: 'Installation failed',
+  43: 'Installation started',
+  44: 'Download started',
+};
 
-  getTableColumns(): TableColumn[] {
-    return [
-      { key: 'timestamp', label: 'Timestamp', render: e => dayjs(e.timestamp).format('YYYY-MM-DD HH:mm:ss') },
-      { key: 'eventId', label: 'Event ID' },
-      { key: 'action', label: 'Action', render: e => this.getAction(e) },
-      { key: 'title', label: 'Update Title', render: e => (e.data['updateTitle'] as string) || (e.data['Title'] as string) || '' },
-      { key: 'result', label: 'Result', render: e => (e.data['Result'] as string) || (e.data['errorCode'] as string) || '' },
-    ];
-  }
-
-  private getAction(e: EvtxEvent): string {
-    switch (e.eventId) {
-      case 19: return 'Install Success';
-      case 20: return 'Install Failure';
-      case 21: return 'Download Success';
-      case 22: return 'Download Failure';
-      case 24: return 'Uninstall Success';
-      case 25: return 'Uninstall Failure';
-      case 27: return 'Auto Update Ended';
-      case 31: return 'Download Started';
-      case 34: return 'Scan Started';
-      case 35: return 'Scan Ended';
-      case 41: return 'Install Started';
-      case 42: return 'Install Ended';
-      case 43: return 'Reboot Required';
-      case 44: return 'Update Downloaded';
-      default: return `Event ${e.eventId}`;
-    }
-  }
-
-  processEvents(events: EvtxEvent[]): EvtxEvent[] {
-    return events.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
-  }
-
-  getDashboardData(events: EvtxEvent[]): DashboardData {
-    return {
-      summary: [
-        { title: 'Total Updates', value: events.length },
-        { title: 'Successful Installs', value: events.filter(e => e.eventId === 19).length },
-        { title: 'Failed Installs', value: events.filter(e => e.eventId === 20).length },
-      ],
-      charts: [],
-    };
-  }
-
-  getChartData(events: EvtxEvent[]): ChartConfig[] {
-    const byDate = new Map<string, number>();
-    for (const e of events) {
-      const d = dayjs(e.timestamp).format('YYYY-MM-DD');
-      byDate.set(d, (byDate.get(d) || 0) + 1);
-    }
-    return [{
-      type: 'bar', title: 'Update History',
-      data: Array.from(byDate.entries()).map(([date, count]) => ({ date, count })),
-      xKey: 'date', yKey: 'count',
-    }];
-  }
-
-  getExportData(events: EvtxEvent[]): Record<string, unknown>[] {
-    return events.map(e => ({
-      Timestamp: e.timestamp.toISOString(),
-      Action: this.getAction(e),
-      Title: e.data['updateTitle'] || e.data['Title'] || '',
-      Result: e.data['Result'] || e.data['errorCode'] || '',
-    }));
-  }
+export interface UpdateRow extends EventRow {
+  action: string;
+  kb: string;
+  title: string;
+  error: string;
 }
+
+export const kbOf = (title: string) => /KB\d{6,8}/i.exec(title)?.[0].toUpperCase() ?? '';
+
+function toRow(e: EvtxEvent): UpdateRow {
+  const title = d(e, 'updateTitle');
+  return { event: e, action: LABELS[e.eventId] ?? String(e.eventId), kb: kbOf(title), title, error: d(e, 'errorCode') };
+}
+
+const eventColumns: Column<UpdateRow>[] = withBase<UpdateRow>([
+  text('action', 'Action', r => r.action, { size: 170, facet: true, tone: r => (r.event.eventId === 20 ? 'danger' : r.event.eventId === 19 ? 'success' : undefined) }),
+  text('kb', 'KB', r => r.kb, { size: 110 }),
+  text('title', 'Update', r => r.title, { size: 560 }),
+  text('error', 'Error code', r => r.error, { size: 110, kind: 'mono' }),
+]);
+
+interface UpdateSummary {
+  kb: string;
+  title: string;
+  computer: string;
+  installed: number;
+  failures: number;
+  firstSeen: number;
+  sample: EvtxEvent;
+}
+
+const summaryColumns: Column<UpdateSummary>[] = [
+  text('kb', 'KB', r => r.kb, { size: 110 }),
+  text('title', 'Update', r => r.title, { size: 520 }),
+  text('computer', 'Computer', r => r.computer, { size: 150, facet: true }),
+  { id: 'firstSeen', label: 'First seen', kind: 'time', value: r => r.firstSeen, size: 190 },
+  { id: 'installed', label: 'Installed', kind: 'time', value: r => r.installed, size: 190 },
+  { id: 'failures', label: 'Failures', kind: 'number', value: r => r.failures, size: 90, tone: r => (r.failures ? 'danger' : undefined) },
+];
+
+export const update: Plugin = {
+  name: 'update',
+  label: 'Windows Update',
+  category: 'System',
+  icon: 'arrow-repeat',
+  description: 'Windows Update client downloads, installs and failures from the System log, with the KB number taken from the update title.',
+  sources: SOURCES,
+  analyze(ctx) {
+    const rows = ctx.select(SOURCES).map(toRow);
+    const byUpdate = groupBy(rows, r => `${r.event.computer}\u0001${d(r.event, 'updateGuid') || r.title}`);
+    const updates: UpdateSummary[] = [...byUpdate.values()].map(list => {
+      const installed = [...list].reverse().find(r => r.event.eventId === 19);
+      return {
+        kb: list[0]!.kb,
+        title: list[0]!.title,
+        computer: list[0]!.event.computer,
+        firstSeen: list[0]!.event.ts,
+        installed: installed?.event.ts ?? NaN,
+        failures: list.filter(r => r.event.eventId === 20).length,
+        sample: (installed ?? list[0]!).event,
+      };
+    });
+    const installs = rows.filter(r => r.event.eventId === 19);
+    const failures = rows.filter(r => r.event.eventId === 20);
+    return {
+      stats: [
+        { label: 'Installed', value: installs.length },
+        { label: 'Failed', value: failures.length, tone: failures.length ? 'danger' : undefined },
+        { label: 'Distinct updates', value: updates.length },
+        { label: 'Never installed', value: updates.filter(u => !Number.isFinite(u.installed)).length },
+      ],
+      charts: [
+        {
+          kind: 'timeline',
+          title: 'Update installs',
+          series: [
+            { name: 'Installed', ts: installs.map(r => r.event.ts) },
+            { name: 'Failed', ts: failures.map(r => r.event.ts) },
+          ],
+        },
+      ],
+      views: [
+        eventView('events', 'Events', rows, eventColumns),
+        { id: 'updates', label: 'Updates', rows: updates, columns: summaryColumns, event: r => r.sample, sort: { id: 'firstSeen', desc: true } },
+      ],
+      notes: [],
+    };
+  },
+};

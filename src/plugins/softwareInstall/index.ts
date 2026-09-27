@@ -1,72 +1,187 @@
-import { PluginBase, type TableColumn, type DashboardData, type ChartConfig, type FilterDef } from '@/core/plugin';
 import type { EvtxEvent } from '@/core/evtx/types';
-import dayjs from 'dayjs';
+import type { Column, Plugin, PluginContext, SourceSpec } from '@/core/plugin';
+import { account, clean } from '@/core/format';
+import { messageCode } from '@/core/lookups';
+import { d, eventView, groupBy, SECURITY, text, withBase, type EventRow } from '../common';
 
-export class SoftwareInstallPlugin extends PluginBase {
-  name = 'softwareInstall';
-  category = 'Application';
-  label = 'Software Install';
-  description = 'Software installation and removal records';
-  icon = 'fa-download';
-  providers = ['MsiInstaller'];
-  eventIds = [1022, 1033, 1034, 1035, 11707, 11708, 11724];
+const AE = 'Microsoft-Windows-Application-Experience';
+const SHELL = 'Microsoft-Windows-Shell-Core';
 
-  getFilterDefs(events: EvtxEvent[]): FilterDef[] {
-    const actions = [...new Set(events.map(e => this.getAction(e)))].sort();
-    return [
-      { key: 'action', label: 'Action', type: 'select', options: actions },
-      { key: 'product', label: 'Product', type: 'text', width: '160px' },
-    ];
-  }
+const SOURCES: SourceSpec[] = [
+  { channel: 'Application', provider: 'MsiInstaller', ids: [1033, 1034, 1035, 11707, 11708, 11724, 11725] },
+  { channel: 'Microsoft-Windows-Application-Experience/Program-Inventory', provider: AE, ids: [903, 904, 905, 906, 907, 908] },
+  { channel: 'Microsoft-Windows-Shell-Core/Operational', provider: SHELL, ids: [28115] },
+  { channel: 'Security', provider: SECURITY, ids: [4657] },
+];
 
-  getTableColumns(): TableColumn[] {
-    return [
-      { key: 'timestamp', label: 'Timestamp', render: e => dayjs(e.timestamp).format('YYYY-MM-DD HH:mm:ss') },
-      { key: 'eventId', label: 'Event ID' },
-      { key: 'action', label: 'Action', render: e => this.getAction(e) },
-      { key: 'product', label: 'Product', render: e => (e.data['ProductName'] as string) || '' },
-      { key: 'user', label: 'User', render: e => (e.data['User'] as string) || '' },
-    ];
-  }
+type Kind = 'Installed' | 'Removed' | 'Reconfigured' | 'Install failed' | 'Removal failed' | 'Changed' | 'Shortcut added';
 
-  private getAction(e: EvtxEvent): string {
-    switch (e.eventId) {
-      case 1022: return 'Product Registered';
-      case 1033: return 'Install Started';
-      case 1034: return 'Install Success';
-      case 1035: return 'Install Failed';
-      case 11707: return 'Install Success (ARP)';
-      case 11708: return 'Install Failed (ARP)';
-      case 11724: return 'Product Removed';
-      default: return `Event ${e.eventId}`;
+const MSI: Record<number, Kind> = { 1033: 'Installed', 1034: 'Removed', 1035: 'Reconfigured', 11707: 'Installed', 11708: 'Install failed', 11724: 'Removed', 11725: 'Removal failed' };
+// Program-Inventory labels as used by the original Glossy.
+const INVENTORY: Record<number, [Kind, string]> = {
+  903: ['Installed', 'non-MSI'],
+  904: ['Installed', 'MSI'],
+  905: ['Changed', ''],
+  906: ['Changed', ''],
+  907: ['Removed', 'non-MSI'],
+  908: ['Removed', 'MSI'],
+};
+
+export interface InstallRow extends EventRow {
+  kind: Kind;
+  product: string;
+  version: string;
+  publisher: string;
+  status: string;
+  user: string;
+  source: string;
+  productCode: string;
+}
+
+const at = (e: EvtxEvent, i: number) => clean((e.list[i] ?? '').replace('(NULL)', ''));
+
+/** The MSI product code travels in the Binary field as hex-encoded ASCII ("{GUID}..."). */
+export function productCode(binary: string | undefined): string {
+  if (!binary || !/^[0-9a-f]+$/i.test(binary)) return '';
+  let ascii = '';
+  for (let i = 0; i + 1 < binary.length && ascii.length < 38; i += 2) ascii += String.fromCharCode(parseInt(binary.slice(i, i + 2), 16));
+  return /^\{[0-9A-F-]{36}\}$/i.test(ascii) ? ascii.toUpperCase() : '';
+}
+
+function toRow(e: EvtxEvent, ctx: PluginContext): InstallRow | null {
+  const user = ctx.sidName(e.userSid) || e.userSid;
+  const p = e.provider.toLowerCase();
+  if (p === 'msiinstaller') {
+    const kind = MSI[e.eventId]!;
+    if (e.eventId >= 11000) {
+      // "Product: <name> -- Installation operation completed successfully."
+      const m = /^Product:\s*(.*?)\s*--\s*(.*)$/s.exec(at(e, 0));
+      return { event: e, kind, product: m?.[1] ?? at(e, 0), version: '', publisher: '', status: m?.[2] ?? '', user, source: 'MsiInstaller', productCode: productCode(e.data['Binary']) };
     }
-  }
-
-  processEvents(events: EvtxEvent[]): EvtxEvent[] {
-    return events.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
-  }
-
-  getDashboardData(events: EvtxEvent[]): DashboardData {
+    const status = at(e, 3);
     return {
-      summary: [
-        { title: 'Installations', value: events.filter(e => [1034, 11707].includes(e.eventId)).length },
-        { title: 'Install Failures', value: events.filter(e => [1035, 11708].includes(e.eventId)).length },
-        { title: 'Removals', value: events.filter(e => e.eventId === 11724).length },
-      ],
-      charts: [],
+      event: e,
+      kind,
+      product: at(e, 0),
+      version: at(e, 1),
+      publisher: at(e, 4),
+      status: status === '0' ? 'Success' : status && `Status ${status}`,
+      user,
+      source: 'MsiInstaller',
+      productCode: productCode(e.data['Binary']),
     };
   }
-
-  getChartData(events: EvtxEvent[]): ChartConfig[] {
-    return [];
+  if (p === AE.toLowerCase()) {
+    const [kind, flavor] = INVENTORY[e.eventId]!;
+    return { event: e, kind, product: d(e, 'Name'), version: d(e, 'Version'), publisher: d(e, 'Publisher'), status: flavor, user, source: 'Program-Inventory', productCode: d(e, 'ProgramID') };
   }
-
-  getExportData(events: EvtxEvent[]): Record<string, unknown>[] {
-    return events.map(e => ({
-      Timestamp: e.timestamp.toISOString(),
-      Action: this.getAction(e),
-      Product: e.data['ProductName'] || '',
-      User: e.data['User'] || '',
-    }));
+  if (p === SHELL.toLowerCase()) {
+    return { event: e, kind: 'Shortcut added', product: d(e, 'Name'), version: '', publisher: '', status: d(e, 'AppID'), user, source: 'Shell-Core', productCode: '' };
   }
+  // Security 4657 on an Uninstall key (needs a SACL on the key).
+  const key = d(e, 'ObjectName');
+  if (!/\\CurrentVersion\\Uninstall\\/i.test(key)) return null;
+  return {
+    event: e,
+    kind: 'Changed',
+    product: key.split('\\').pop() ?? key,
+    version: '',
+    publisher: '',
+    status: `${messageCode(d(e, 'OperationType'))}: ${d(e, 'ObjectValueName')} = ${d(e, 'NewValue')}`,
+    user: account(e.data['SubjectDomainName'], e.data['SubjectUserName']),
+    source: 'Registry (4657)',
+    productCode: '',
+  };
 }
+
+const eventColumns: Column<InstallRow>[] = withBase<InstallRow>([
+  text('kind', 'Action', r => r.kind, { size: 130, facet: true, tone: r => (r.kind.endsWith('failed') ? 'danger' : r.kind === 'Removed' ? 'warning' : undefined) }),
+  text('product', 'Product', r => r.product, { size: 300 }),
+  text('version', 'Version', r => r.version, { size: 120 }),
+  text('publisher', 'Publisher', r => r.publisher, { size: 200, facet: true }),
+  text('status', 'Status / detail', r => r.status, { size: 280 }),
+  text('user', 'User', r => r.user, { size: 180, facet: true }),
+  text('source', 'Source', r => r.source, { size: 140, facet: true }),
+  text('productCode', 'Product code', r => r.productCode, { size: 300, kind: 'mono', hidden: true }),
+]);
+
+interface ProductSummary {
+  product: string;
+  version: string;
+  publisher: string;
+  computer: string;
+  installed: number;
+  removed: number;
+  events: number;
+  sample: EvtxEvent;
+}
+
+const productColumns: Column<ProductSummary>[] = [
+  text('product', 'Product', r => r.product, { size: 320 }),
+  text('version', 'Version', r => r.version, { size: 120 }),
+  text('publisher', 'Publisher', r => r.publisher, { size: 200, facet: true }),
+  text('computer', 'Computer', r => r.computer, { size: 150, facet: true }),
+  { id: 'installed', label: 'Last installed', kind: 'time', value: r => r.installed, size: 190 },
+  { id: 'removed', label: 'Last removed', kind: 'time', value: r => r.removed, size: 190, tone: r => (r.removed > r.installed ? 'warning' : undefined) },
+  { id: 'events', label: 'Events', kind: 'number', value: r => r.events, size: 80 },
+];
+
+export const softwareInstall: Plugin = {
+  name: 'softwareInstall',
+  label: 'Software Install',
+  category: 'Application',
+  icon: 'box-seam',
+  description:
+    'Software installs and removals from Windows Installer (MsiInstaller), the Program-Inventory log (Windows 7/8), Start menu shortcuts (Shell-Core 28115) and audited Uninstall registry keys (4657).',
+  sources: SOURCES,
+  analyze(ctx) {
+    const rows = ctx
+      .select(SOURCES)
+      .map(e => toRow(e, ctx))
+      .filter((r): r is InstallRow => r !== null);
+    const products: ProductSummary[] = [...groupBy(rows.filter(r => r.product && r.kind !== 'Shortcut added'), r => `${r.event.computer}\u0001${r.product.toLowerCase()}`).values()].map(
+      list => {
+        const last = (kind: Kind) => [...list].reverse().find(r => r.kind === kind)?.event.ts ?? NaN;
+        const described = [...list].reverse().find(r => r.version || r.publisher);
+        return {
+          product: list[0]!.product,
+          version: described?.version ?? '',
+          publisher: described?.publisher ?? '',
+          computer: list[0]!.event.computer,
+          installed: last('Installed'),
+          removed: last('Removed'),
+          events: list.length,
+          sample: list[list.length - 1]!.event,
+        };
+      },
+    );
+    // Windows Installer logs each operation twice (1033/1034 with details, 11707/11724 as a summary line),
+    // so counts use one event per operation.
+    const counted = rows.filter(r => !(r.source === 'MsiInstaller' && (r.event.eventId === 11707 || r.event.eventId === 11724)));
+    const installs = counted.filter(r => r.kind === 'Installed');
+    const removals = counted.filter(r => r.kind === 'Removed');
+    return {
+      stats: [
+        { label: 'Installs', value: installs.length },
+        { label: 'Removals', value: removals.length },
+        { label: 'Failed', value: rows.filter(r => r.kind.endsWith('failed')).length },
+        { label: 'Products', value: products.length },
+      ],
+      charts: [
+        {
+          kind: 'timeline',
+          title: 'Installs and removals',
+          series: [
+            { name: 'Installed', ts: installs.map(r => r.event.ts) },
+            { name: 'Removed', ts: removals.map(r => r.event.ts) },
+          ],
+        },
+      ],
+      views: [
+        eventView('events', 'Events', rows, eventColumns),
+        { id: 'products', label: 'Products', rows: products, columns: productColumns, event: r => r.sample, sort: { id: 'installed', desc: true } },
+      ],
+      notes: [],
+    };
+  },
+};

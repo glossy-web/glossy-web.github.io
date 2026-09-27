@@ -1,274 +1,408 @@
 <template>
-  <div class="event-table-wrapper d-flex flex-column flex-grow-1" style="min-height: 0">
-    <div class="d-flex justify-content-between align-items-center mb-2 flex-shrink-0">
-      <div class="d-flex align-items-center gap-2">
-        <div class="input-group input-group-sm" style="width: 280px">
-          <span class="input-group-text"><i class="fa fa-search"></i></span>
-          <input type="text" class="form-control" v-model="searchText"
-                 placeholder="Search events..." @input="onSearch" />
-          <button v-if="searchText" class="btn btn-outline-secondary btn-sm" @click="searchText = ''; currentPage = 1">
-            <i class="fa fa-times"></i>
-          </button>
-        </div>
-        <select class="form-select form-select-sm" style="width: 80px" v-model.number="perPage" @change="currentPage = 1">
-          <option :value="25">25</option>
-          <option :value="50">50</option>
-          <option :value="100">100</option>
-          <option :value="500">500</option>
-          <option :value="1000">1000</option>
-        </select>
+  <div class="event-table d-flex flex-column flex-grow-1">
+    <div class="toolbar d-flex flex-wrap align-items-center gap-2 mb-2">
+      <div class="input-group input-group-sm search">
+        <span class="input-group-text"><i class="bi bi-search" aria-hidden="true"></i></span>
+        <input
+          v-model="search"
+          type="search"
+          class="form-control"
+          placeholder="Search all columns"
+          aria-label="Search all columns"
+        />
       </div>
-      <button class="btn btn-sm btn-outline-secondary" @click="exportCSV">
-        <i class="fa fa-download"></i> Export CSV
-      </button>
+      <span class="text-body-secondary small tabular">
+        {{ rows.length.toLocaleString() }} of {{ view.rows.length.toLocaleString() }} rows
+      </span>
+      <button v-if="hasFilters" class="btn btn-sm btn-link px-1" @click="clearFilters">Clear filters</button>
+      <div class="ms-auto d-flex gap-2">
+        <details class="columns-menu">
+          <summary class="btn btn-sm btn-outline-secondary"><i class="bi bi-layout-three-columns"></i> Columns</summary>
+          <div class="menu shadow-sm border rounded p-2">
+            <label v-for="col in table.getAllLeafColumns()" :key="col.id" class="form-check small mb-1">
+              <input
+                class="form-check-input"
+                type="checkbox"
+                :checked="col.getIsVisible()"
+                @change="col.toggleVisibility()"
+              />
+              {{ labelOf(col.id) }}
+            </label>
+          </div>
+        </details>
+        <button class="btn btn-sm btn-outline-secondary" :disabled="rows.length === 0" @click="exportCsv">
+          <i class="bi bi-download"></i> CSV
+        </button>
+      </div>
     </div>
 
-    <div class="table-scroll" style="flex: 1 1 0; min-height: 600px; overflow-y: auto">
-      <table class="table table-sm table-hover table-striped mb-0">
-        <thead class="table-dark" style="position: sticky; top: 0; z-index: 2">
+    <div ref="scroller" class="scroller border rounded flex-grow-1">
+      <table class="table table-sm table-hover mb-0" :style="{ minWidth: totalWidth + 'px' }">
+        <colgroup>
+          <col v-for="col in visibleColumns" :key="col.id" :style="{ width: (defs[col.id]?.size ?? 160) + 'px' }" />
+        </colgroup>
+        <thead>
           <tr>
-            <th v-for="col in columns" :key="col.key"
-                :style="{ width: col.width || 'auto' }"
-                class="sortable"
-                @click="sortBy(col.key)">
-              {{ col.label }}
-              <span v-if="sortKey === col.key" class="ms-1">
-                {{ sortAsc ? '▲' : '▼' }}
-              </span>
+            <th
+              v-for="col in visibleColumns"
+              :key="col.id"
+              scope="col"
+              :class="{ 'text-end': defs[col.id]?.kind === 'number' }"
+              :aria-sort="ariaSort(col.getIsSorted())"
+            >
+              <button class="sort-btn" type="button" @click="col.toggleSorting(undefined, false)">
+                {{ labelOf(col.id) }}
+                <i v-if="col.getIsSorted()" :class="col.getIsSorted() === 'asc' ? 'bi bi-caret-up-fill' : 'bi bi-caret-down-fill'"></i>
+              </button>
+            </th>
+          </tr>
+          <tr class="filters">
+            <th v-for="col in visibleColumns" :key="col.id">
+              <select
+                v-if="defs[col.id]?.facet"
+                class="form-select form-select-sm"
+                :value="(col.getFilterValue() as string) ?? ''"
+                :aria-label="`Filter ${labelOf(col.id)}`"
+                @focus="facetOpen[col.id] = true"
+                @change="col.setFilterValue(($event.target as HTMLSelectElement).value || undefined)"
+              >
+                <option value="">All</option>
+                <option v-for="[value, count] in facetValues(col)" :key="value" :value="value">
+                  {{ value === '' ? '(empty)' : value }}{{ Number.isNaN(count) ? '' : ` (${count})` }}
+                </option>
+              </select>
+              <input
+                v-else
+                class="form-control form-control-sm"
+                :value="(col.getFilterValue() as string) ?? ''"
+                :placeholder="defs[col.id]?.kind === 'time' ? 'YYYY-MM-DD…' : 'contains…'"
+                :aria-label="`Filter ${labelOf(col.id)}`"
+                @input="col.setFilterValue(($event.target as HTMLInputElement).value || undefined)"
+              />
             </th>
           </tr>
         </thead>
         <tbody>
-          <tr v-for="event in paginatedEvents" :key="event.id"
-              @click="$emit('show-detail', event)"
-              style="cursor: pointer">
-            <td v-for="col in columns" :key="col.key">
-              <template v-if="col.render">
-                {{ col.render(event) }}
-              </template>
-              <template v-else-if="col.key === 'timestamp'">
-                {{ formatTimestamp(event.timestamp) }}
-              </template>
-              <template v-else-if="col.key === 'provider'">
-                {{ event.provider }}
-              </template>
-              <template v-else-if="col.key === 'eventId'">
-                {{ event.eventId }}
-              </template>
-              <template v-else-if="col.key === 'levelName'">
-                <span :class="levelBadge(event.level)">{{ event.levelName }}</span>
-              </template>
-              <template v-else-if="col.key === 'channel'">
-                {{ event.channel }}
-              </template>
-              <template v-else-if="col.key === 'computer'">
-                {{ event.computer }}
-              </template>
-              <template v-else>
-                {{ getEventData(event, col.key) }}
-              </template>
-            </td>
+          <tr v-if="padTop > 0" aria-hidden="true"><td :colspan="visibleColumns.length" :style="{ height: padTop + 'px', padding: 0, border: 0 }"></td></tr>
+          <tr
+            v-for="item in virtualItems"
+            :key="String(item.key)"
+            :class="{ clickable: !!view.event }"
+            @click="open(rows[item.index]!.original)"
+          >
+            <td
+              v-for="col in visibleColumns"
+              :key="col.id"
+              :class="cellClass(rows[item.index]!.original, col.id)"
+              :title="cellText(rows[item.index]!.original, col.id)"
+            >{{ cellText(rows[item.index]!.original, col.id) }}</td>
           </tr>
-          <tr v-if="paginatedEvents.length === 0">
-            <td :colspan="columns.length" class="text-center text-muted py-4">
-              No events found matching the current filter.
+          <tr v-if="padBottom > 0" aria-hidden="true"><td :colspan="visibleColumns.length" :style="{ height: padBottom + 'px', padding: 0, border: 0 }"></td></tr>
+          <tr v-if="rows.length === 0">
+            <td :colspan="visibleColumns.length" class="text-center text-body-secondary py-4">
+              {{ view.rows.length === 0 ? 'No matching events in the loaded logs.' : 'No rows match the current filters.' }}
             </td>
           </tr>
         </tbody>
       </table>
     </div>
-
-    <div class="d-flex justify-content-between align-items-center mt-2 flex-shrink-0">
-      <small class="text-muted">
-        Showing {{ startIndex + 1 }}-{{ endIndex }} of {{ filteredEvents.length }} events
-        ({{ events.length }} total)
-      </small>
-      <nav v-if="totalPages > 1">
-        <ul class="pagination pagination-sm mb-0">
-          <li class="page-item" :class="{ disabled: currentPage <= 1 }">
-            <a class="page-link" href="#" @click.prevent="goToPage(1)">&laquo;</a>
-          </li>
-          <li class="page-item" :class="{ disabled: currentPage <= 1 }">
-            <a class="page-link" href="#" @click.prevent="goToPage(currentPage - 1)">&lsaquo;</a>
-          </li>
-          <li class="page-item" v-for="p in pageNumbers" :key="p"
-              :class="{ active: p === currentPage }">
-            <a class="page-link" href="#" @click.prevent="goToPage(p)">{{ p }}</a>
-          </li>
-          <li class="page-item" :class="{ disabled: currentPage >= totalPages }">
-            <a class="page-link" href="#" @click.prevent="goToPage(currentPage + 1)">&rsaquo;</a>
-          </li>
-          <li class="page-item" :class="{ disabled: currentPage >= totalPages }">
-            <a class="page-link" href="#" @click.prevent="goToPage(totalPages)">&raquo;</a>
-          </li>
-        </ul>
-      </nav>
-    </div>
   </div>
 </template>
 
-<script lang="ts">
-import { defineComponent, computed, ref, PropType } from 'vue';
+<script setup lang="ts">
+import { computed, markRaw, reactive, ref, watch } from 'vue';
+import {
+  columnFacetingFeature,
+  columnFilteringFeature,
+  columnVisibilityFeature,
+  createFacetedRowModel,
+  createFacetedUniqueValues,
+  createFilteredRowModel,
+  createSortedRowModel,
+  globalFilteringFeature,
+  rowSortingFeature,
+  tableFeatures,
+  useTable,
+} from '@tanstack/vue-table';
+import { useVirtualizer } from '@tanstack/vue-virtual';
+import type { Column, View } from '@/core/plugin';
 import type { EvtxEvent } from '@/core/evtx/types';
-import type { TableColumn } from '@/core/plugin';
-import dayjs from 'dayjs';
+import { formatIso, formatTime, UTC } from '@/core/time';
+import { download, toCsv } from '@/core/csv';
+import { eventStore } from '@/core/store';
 
-function searchableText(e: EvtxEvent): string {
-  const parts = [e.provider, e.channel, e.computer, e.levelName];
-  for (const v of Object.values(e.data || {})) {
-    if (typeof v === 'string') parts.push(v);
-  }
-  return parts.join('\n').toLowerCase();
+type Row = any; // rows are plugin-defined objects
+type AnyColumn = Column<Row>;
+
+const props = defineProps<{ view: View<Row>; zone: string; exportName: string }>();
+const emit = defineEmits<{ open: [event: EvtxEvent] }>();
+
+const ROW_HEIGHT = 27;
+
+const defs = computed<Record<string, AnyColumn>>(() => Object.fromEntries(props.view.columns.map(c => [c.id, c])));
+const labelOf = (id: string) => defs.value[id]?.label ?? id;
+
+function textOf(row: Row, col: AnyColumn, zone: string): string {
+  const value = col.value(row);
+  if (col.kind === 'time') return typeof value === 'number' ? formatTime(value, zone) : '';
+  if (col.text) return col.text(row);
+  return value === null || value === undefined ? '' : String(value);
 }
 
-export default defineComponent({
-  name: 'EventTable',
-  props: {
-    events: { type: Array as PropType<EvtxEvent[]>, required: true },
-    columns: { type: Array as PropType<TableColumn[]>, required: true },
-    pluginName: { type: String, default: '' },
-  },
-  emits: ['show-detail'],
-  setup(props) {
-    const searchText = ref('');
-    const sortKey = ref<string | null>(null);
-    const sortAsc = ref(true);
-    const currentPage = ref(1);
-    const perPage = ref(1000);
+const cellText = (row: Row, id: string) => {
+  const col = defs.value[id];
+  return col ? textOf(row, col, props.zone) : '';
+};
 
-    const filteredEvents = computed(() => {
-      let list = [...props.events];
+function cellClass(row: Row, id: string): string[] {
+  const col = defs.value[id];
+  if (!col) return [];
+  const classes: string[] = [];
+  if (col.kind === 'number') classes.push('text-end', 'tabular');
+  if (col.kind === 'time') classes.push('tabular', 'text-nowrap');
+  if (col.kind === 'mono') classes.push('font-monospace');
+  if (col.kind === 'wrap') classes.push('wrap');
+  const tone = col.tone?.(row);
+  if (tone) classes.push(`tone-${tone}`);
+  return classes;
+}
 
-      if (searchText.value) {
-        const q = searchText.value.toLowerCase();
-        list = list.filter(e => searchableText(e).includes(q));
-      }
+/** Column filter: exact value for pick-list columns, case-insensitive substring otherwise. */
+const columnFilter = (row: { original: Row }, columnId: string, filterValue: unknown) => {
+  const col = defs.value[columnId];
+  if (!col) return true;
+  if (col.facet) return String(col.value(row.original) ?? '') === String(filterValue);
+  return textOf(row.original, col, props.zone).toLowerCase().includes(String(filterValue ?? '').toLowerCase());
+};
 
-      if (sortKey.value) {
-        const key = sortKey.value;
-        const asc = sortAsc.value;
-        const col = props.columns.find(c => c.key === key);
-        const getVal = col?.render
-          ? (e: EvtxEvent) => col.render!(e)
-          : (e: EvtxEvent) => {
-              if (key === 'timestamp') return e.timestamp.getTime();
-              if (key === 'provider') return e.provider;
-              if (key === 'eventId') return e.eventId;
-              if (key === 'levelName') return e.level;
-              if (key === 'channel') return e.channel;
-              if (key === 'computer') return e.computer;
-              return (e.data as Record<string, unknown>)[key] ?? '';
-            };
+/** Search box: case-insensitive substring in any searchable column. */
+const searchFilter = (row: { original: Row }, columnId: string, filterValue: unknown) => {
+  const col = defs.value[columnId];
+  return !!col && textOf(row.original, col, props.zone).toLowerCase().includes(String(filterValue ?? '').toLowerCase());
+};
 
-        list.sort((a, b) => {
-          let va: unknown = getVal(a);
-          let vb: unknown = getVal(b);
+const compare = (a: { original: Row }, b: { original: Row }, columnId: string) => {
+  const col = defs.value[columnId];
+  if (!col) return 0;
+  const va = col.value(a.original);
+  const vb = col.value(b.original);
+  if (typeof va === 'number' && typeof vb === 'number') return va - vb;
+  const sa = String(va ?? '');
+  const sb = String(vb ?? '');
+  return sa < sb ? -1 : sa > sb ? 1 : 0;
+};
 
-          if (typeof va === 'string' && typeof vb === 'string') {
-            return asc ? va.localeCompare(vb) : vb.localeCompare(va);
-          }
-          const na = Number(va);
-          const nb = Number(vb);
-          if (!isNaN(na) && !isNaN(nb)) {
-            return asc ? na - nb : nb - na;
-          }
-          return 0;
-        });
-      }
-
-      return list;
-    });
-
-    const totalPages = computed(() => Math.max(1, Math.ceil(filteredEvents.value.length / perPage.value)));
-    const startIndex = computed(() => (currentPage.value - 1) * perPage.value);
-    const endIndex = computed(() => Math.min(startIndex.value + perPage.value, filteredEvents.value.length));
-
-    const paginatedEvents = computed(() =>
-      filteredEvents.value.slice(startIndex.value, endIndex.value),
-    );
-
-    const pageNumbers = computed(() => {
-      const pages: number[] = [];
-      const total = totalPages.value;
-      const current = currentPage.value;
-      let start = Math.max(1, current - 2);
-      let end = Math.min(total, current + 2);
-      if (end - start < 4) {
-        if (start === 1) end = Math.min(total, 5);
-        else start = Math.max(1, end - 4);
-      }
-      for (let i = start; i <= end; i++) pages.push(i);
-      return pages;
-    });
-
-    function onSearch() {
-      currentPage.value = 1;
-    }
-
-    function sortBy(key: string) {
-      if (sortKey.value === key) sortAsc.value = !sortAsc.value;
-      else { sortKey.value = key; sortAsc.value = true; }
-      currentPage.value = 1;
-    }
-
-    function goToPage(p: number) {
-      if (p >= 1 && p <= totalPages.value) currentPage.value = p;
-    }
-
-    function formatTimestamp(ts: Date): string {
-      return dayjs(ts).format('YYYY-MM-DD HH:mm:ss');
-    }
-
-    function levelBadge(level: number): string {
-      if (level <= 2) return 'badge bg-danger';
-      if (level === 3) return 'badge bg-warning text-dark';
-      return 'badge bg-secondary';
-    }
-
-    function getEventData(event: EvtxEvent, key: string): string {
-      return (event.data?.[key] as string) || '';
-    }
-
-    function exportCSV() {
-      const rows = filteredEvents.value.map(e =>
-        props.columns.map(c => {
-          if (c.render) return c.render(e);
-          if (c.key === 'timestamp') return formatTimestamp(e.timestamp);
-          return getEventData(e, c.key) || String((e as unknown as Record<string, unknown>)[c.key] ?? '');
-        }),
-      );
-      const header = props.columns.map(c => c.label).join(',');
-      const csv = [header, ...rows.map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(','))].join('\n');
-      const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `glossy_${props.pluginName}_export.csv`;
-      a.click();
-      URL.revokeObjectURL(url);
-    }
-
-    return {
-      searchText, sortKey, sortAsc, currentPage, perPage,
-      filteredEvents, totalPages, startIndex, endIndex, paginatedEvents, pageNumbers,
-      sortBy, goToPage, formatTimestamp, levelBadge, getEventData, exportCSV, onSearch,
-    };
-  },
+const features = tableFeatures({
+  columnFilteringFeature,
+  globalFilteringFeature,
+  rowSortingFeature,
+  columnFacetingFeature,
+  columnVisibilityFeature,
+  filteredRowModel: createFilteredRowModel(),
+  sortedRowModel: createSortedRowModel(),
+  facetedRowModel: createFacetedRowModel(),
+  facetedUniqueValues: createFacetedUniqueValues(),
 });
+
+const columns = props.view.columns.map(c => ({
+  id: c.id,
+  header: c.label,
+  accessorFn: (row: Row) => c.value(row),
+  filterFn: columnFilter,
+  sortFn: compare,
+  sortUndefined: 'last' as const,
+}));
+
+const data = computed(() => markRaw(props.view.rows));
+const search = ref('');
+const debounced = ref('');
+let timer: ReturnType<typeof setTimeout> | undefined;
+watch(search, v => {
+  clearTimeout(timer);
+  timer = setTimeout(() => (debounced.value = v.trim()), 200);
+});
+
+const table = useTable({
+  features,
+  columns: columns as never,
+  data: data as never,
+  initialState: {
+    sorting: [{ id: props.view.sort?.id ?? props.view.columns[0]?.id ?? '', desc: props.view.sort?.desc ?? false }],
+    columnVisibility: Object.fromEntries(props.view.columns.filter(c => c.hidden).map(c => [c.id, false])),
+  },
+  enableSortingRemoval: false,
+  globalFilterFn: searchFilter as never,
+  getColumnCanGlobalFilter: (column: { id: string }) => defs.value[column.id]?.kind !== 'time',
+} as never) as any;
+
+watch(debounced, v => table.setGlobalFilter(v || undefined));
+
+const rows = computed(() => table.getRowModel().rows as { id: string; original: Row }[]);
+const visibleColumns = computed(() => table.getVisibleLeafColumns() as any[]);
+const totalWidth = computed(() => visibleColumns.value.reduce((w: number, c: { id: string }) => w + (defs.value[c.id]?.size ?? 160), 0));
+const hasFilters = computed(() => table.atoms.columnFilters.get().length > 0 || !!debounced.value);
+
+// Facet lists are computed only for pickers the analyst has focused.
+const facetOpen = reactive<Record<string, boolean>>({});
+function facetValues(col: { id: string; getFacetedUniqueValues: () => Map<unknown, number>; getFilterValue: () => unknown }) {
+  if (!facetOpen[col.id]) {
+    const current = col.getFilterValue();
+    return current === undefined ? [] : [[String(current), NaN] as [string, number]];
+  }
+  return [...col.getFacetedUniqueValues()]
+    .map(([v, n]) => [String(v ?? ''), n] as [string, number])
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .slice(0, 500);
+}
+
+function clearFilters() {
+  table.resetColumnFilters(true);
+  search.value = '';
+  debounced.value = '';
+}
+
+const scroller = ref<HTMLElement | null>(null);
+const virtualizer = useVirtualizer(
+  computed(() => ({
+    count: rows.value.length,
+    getScrollElement: () => scroller.value,
+    estimateSize: () => ROW_HEIGHT,
+    getItemKey: (index: number) => rows.value[index]?.id ?? index,
+    overscan: 12,
+  })),
+);
+const virtualItems = computed(() => virtualizer.value.getVirtualItems());
+const padTop = computed(() => virtualItems.value[0]?.start ?? 0);
+const padBottom = computed(() => {
+  const items = virtualItems.value;
+  const last = items[items.length - 1];
+  return last ? virtualizer.value.getTotalSize() - last.end : 0;
+});
+
+function ariaSort(sorted: false | 'asc' | 'desc'): 'ascending' | 'descending' | 'none' {
+  return sorted === 'asc' ? 'ascending' : sorted === 'desc' ? 'descending' : 'none';
+}
+
+function open(row: Row) {
+  const event = props.view.event?.(row);
+  if (event) emit('open', event);
+}
+
+function exportCsv() {
+  const cols = visibleColumns.value.map((c: { id: string }) => defs.value[c.id]!).filter(Boolean);
+  const zone = props.zone;
+  const header = cols.map(c => (c.kind === 'time' ? `${c.label} (${zone === UTC ? 'UTC' : zone})` : c.label));
+  // Every exported row carries enough to find its record again, unless the view already shows it.
+  const shown = new Set(cols.map(c => c.id));
+  const trace: [string, string, (e: EvtxEvent) => string][] = props.view.event
+    ? ([
+        ['computer', 'Computer', e => e.computer],
+        ['channel', 'Channel', e => e.channel],
+        ['provider', 'Provider', e => e.provider],
+        ['eventId', 'EventID', e => String(e.eventId)],
+        ['recordId', 'EventRecordID', e => String(e.recordId)],
+        ['sourceFile', 'SourceFile', e => eventStore.sources.find(s => s.index === e.src)?.name ?? ''],
+      ] as [string, string, (e: EvtxEvent) => string][]).filter(([id]) => !shown.has(id))
+    : [];
+  header.push(...trace.map(([, label]) => label));
+  const body = rows.value.map(r => {
+    const out = cols.map(c => {
+      const v = c.value(r.original);
+      return c.kind === 'time' ? (typeof v === 'number' ? formatIso(v, zone) : '') : textOf(r.original, c, zone);
+    });
+    const e = props.view.event?.(r.original);
+    for (const [, , get] of trace) out.push(e ? get(e) : '');
+    return out;
+  });
+  const stamp = new Date().toISOString().replace(/[-:]/g, '').slice(0, 15);
+  download(`glossy_${props.exportName}_${stamp}.csv`, toCsv(header, body));
+}
 </script>
 
 <style scoped>
-.table-scroll {
-  background: #fff;
+.event-table {
+  min-height: 0;
 }
-.sortable {
+.search {
+  width: 280px;
+}
+.scroller {
+  overflow: auto;
+  min-height: 240px;
+  flex: 1 1 0;
+  background: var(--bs-body-bg);
+}
+table {
+  table-layout: fixed;
+  font-size: 12.5px;
+}
+thead th {
+  position: sticky;
+  z-index: 2;
+  background: var(--bs-tertiary-bg);
+  white-space: nowrap;
+}
+thead tr:first-child th {
+  top: 0;
+}
+thead tr.filters th {
+  top: 31px;
+  padding: 2px 4px 4px;
+  font-weight: normal;
+}
+.sort-btn {
+  all: unset;
   cursor: pointer;
-  user-select: none;
+  display: block;
+  width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
-.sortable:hover {
-  background: #3a3f44;
+.sort-btn:focus-visible {
+  outline: 2px solid var(--bs-primary);
 }
-.table-hover tbody tr:hover {
-  background: #e7f1ff;
+td {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  height: 27px;
+}
+td.wrap {
+  white-space: nowrap;
+}
+tr.clickable {
+  cursor: pointer;
+}
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+.tone-danger {
+  color: var(--bs-danger-text-emphasis);
+  font-weight: 600;
+}
+.tone-warning {
+  color: var(--bs-warning-text-emphasis);
+  font-weight: 600;
+}
+.tone-success {
+  color: var(--bs-success-text-emphasis);
+}
+.tone-muted {
+  color: var(--bs-secondary-color);
+}
+.columns-menu {
+  position: relative;
+}
+.columns-menu summary {
+  list-style: none;
+}
+.columns-menu .menu {
+  position: absolute;
+  right: 0;
+  z-index: 10;
+  background: var(--bs-body-bg);
+  min-width: 220px;
+  max-height: 360px;
+  overflow: auto;
 }
 </style>

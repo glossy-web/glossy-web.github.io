@@ -1,47 +1,40 @@
 <template>
-  <div class="dashboard-panel px-4 py-3" v-if="data">
-    <div class="row g-3">
-      <div class="col-md-3 col-sm-6" v-for="(item, idx) in data.summary" :key="idx">
-        <div class="card border-0 shadow-sm h-100">
-          <div class="card-body text-center py-3">
-            <div class="stat-value">{{ item.value }}</div>
-            <div class="stat-label text-muted small">{{ item.title }}</div>
-          </div>
-        </div>
+  <div v-if="stats.length" class="stats d-flex flex-wrap gap-2">
+    <div v-for="s in stats" :key="s.label" class="stat border rounded px-3 py-2" :class="s.tone ? `tone-${s.tone}` : ''">
+      <div class="value">{{ typeof s.value === 'number' ? s.value.toLocaleString() : s.value }}</div>
+      <div class="label small text-body-secondary">
+        <i v-if="s.tone === 'danger' || s.tone === 'warning'" class="bi bi-exclamation-triangle-fill me-1" aria-hidden="true"></i>{{ s.label }}
       </div>
     </div>
   </div>
 </template>
 
-<script lang="ts">
-import { defineComponent, PropType } from 'vue';
-import type { DashboardData } from '@/core/plugin';
+<script setup lang="ts">
+import type { Stat } from '@/core/plugin';
 
-export default defineComponent({
-  name: 'DashboardPanel',
-  props: {
-    data: { type: Object as PropType<DashboardData | null>, default: null },
-    pluginName: { type: String, default: '' },
-  },
-});
+defineProps<{ stats: Stat[] }>();
 </script>
 
 <style scoped>
-.stat-value {
-  font-size: 1.8rem;
-  font-weight: 700;
-  color: #0d6efd;
+.stat {
+  min-width: 140px;
+  background: var(--bs-body-bg);
 }
-.stat-label {
-  font-size: 0.8rem;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
+.value {
+  font-size: 1.35rem;
+  font-weight: 600;
+  line-height: 1.2;
 }
-.card {
-  border-radius: 8px;
-  transition: transform 0.15s;
+.tone-danger {
+  border-color: var(--bs-danger-border-subtle) !important;
 }
-.card:hover {
-  transform: translateY(-2px);
+.tone-danger .label {
+  color: var(--bs-danger-text-emphasis) !important;
+}
+.tone-warning {
+  border-color: var(--bs-warning-border-subtle) !important;
+}
+.tone-warning .label {
+  color: var(--bs-warning-text-emphasis) !important;
 }
 </style>
