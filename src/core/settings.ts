@@ -24,5 +24,8 @@ export const KEY_CHANNELS: { channel: string; offByDefault?: boolean; why: strin
   { channel: 'Microsoft-Windows-PrintService/Operational', offByDefault: true, why: 'Printed documents' },
   { channel: 'Microsoft-Windows-WLAN-AutoConfig/Operational', why: 'Wi-Fi connections' },
   { channel: 'Microsoft-Windows-Windows Firewall With Advanced Security/Firewall', why: 'Firewall rule and profile changes' },
+  { channel: 'Microsoft-Windows-PowerShell/Operational', why: 'Script blocks (4104), module logging (4103)' },
+  { channel: 'Windows PowerShell', why: 'PowerShell engine starts with host command line (400/800)' },
+  { channel: 'Microsoft-Windows-Windows Defender/Operational', why: 'Malware detections, protection changes' },
   { channel: 'Microsoft-Windows-Sysmon/Operational', offByDefault: true, why: 'Sysmon process and registry telemetry' },
 ];

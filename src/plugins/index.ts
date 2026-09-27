@@ -17,6 +17,8 @@ import { usbStorage } from './usbStorage';
 import { cdRecording } from './cdRecording';
 import { documentPrinting } from './documentPrinting';
 import { wireless } from './wireless';
+import { powershell } from './powershell';
+import { defender } from './defender';
 
 /** Every analysis module, in sidebar order within its category. */
 export const plugins: Plugin[] = [
@@ -28,10 +30,12 @@ export const plugins: Plugin[] = [
   timeChange,
   update,
   eventReset,
+  defender,
   logon,
   rdpLogon,
   accountManagement,
   processExecution,
+  powershell,
   applicationErrors,
   softwareInstall,
   usbStorage,

@@ -31,10 +31,12 @@ A browser port of [Glossy](https://github.com/whatabeautifulmemory/glossy) (KDFS
 | Time Change | Clock changes with jump size and the process responsible | Security 4616, Kernel-General 1 |
 | Windows Update | Downloads, installs, failures, KB numbers | WindowsUpdateClient 19/20/43/44 |
 | Log Clearing & Tampering | Cleared logs, logging stopped/full, audit policy changes, record-number gaps | Eventlog 1102/104/1100/1104/1105, Security 4719 |
+| Microsoft Defender | Detections with their outcome, threats, failed remediation, protection disabled, exclusions added, tamper protection blocks | Defender/Operational 1006–1008, 1015, 1116–1119, 1009, 1013, 5001, 5004, 5007, 5010, 5012, 5013 |
 | Account Logon | Logons with failure reasons, admin logons (4672 by Logon ID), sessions, failures by source; noise filter | Security 4624/4625/4634/4647/4648/4672/4778/4779/4800/4801 |
 | RDP | Inbound chain (connection → authentication → logon → session) and outbound RDP, sessions, source addresses | RdpCoreTS 131, RCM 1149, Security 4624/4625 (type 10), 4778/4779, LSM 21–25/39/40, RDPClient 1024/1102 |
 | Account Management | Account lifecycle, renames, lockouts, group membership (admin groups highlighted) | Security 4720–4726, 4738, 4740, 4767, 4781, 4728/4729/4732/4733/4756/4757, 4731/4734/4735, 4798/4799 |
 | Process Execution | Processes with command line and parent (inferred for older 4688), rarest executables first | Security 4688/4689, Sysmon 1/5, Application-Experience 500 |
+| PowerShell | Script blocks reassembled from their parts, blocks PowerShell itself flagged, triage indicators, decoded `-EncodedCommand`, PowerShell 2.0 downgrades, pipeline and module logging | PowerShell/Operational 4103/4104/40961/40962/53504, PowerShellCore/Operational 4103/4104, Windows PowerShell 400/403/600/800 |
 | Application Errors | Crashes, hangs, error reports, .NET exceptions, with exception codes | Application Error 1000, Application Hang 1002, WER 1001, .NET Runtime 1026 |
 | Software Install | Installs and removals with product, version, publisher, product code | MsiInstaller 1033/1034/1035/11707/11708/11724/11725, Program-Inventory 903–908, Shell-Core 28115, Security 4657 |
 | USB Storage | Devices with serial, capacity and volume serial number; connection history; logged-on user (inferred) | Partition/Diagnostic 1006, Kernel-PnP 400/410/420/430, UserPnp 20001/20003, DriverFrameworks-UserMode 2003/2101/2102/10000 |

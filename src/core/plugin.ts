@@ -26,7 +26,14 @@ export interface View<R = unknown> {
   columns: Column<R>[];
   /** The event opened when a row is clicked. */
   event?: (row: R) => EvtxEvent | undefined;
+  /** Text shown above the record when a row is opened (e.g. a script reassembled from several events). */
+  detail?: (row: R) => RowDetail | undefined;
   sort?: { id: string; desc?: boolean };
+}
+
+export interface RowDetail {
+  title: string;
+  text: string;
 }
 
 export interface Stat {

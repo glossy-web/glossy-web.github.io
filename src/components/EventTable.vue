@@ -125,7 +125,7 @@ import {
   useTable,
 } from '@tanstack/vue-table';
 import { useVirtualizer } from '@tanstack/vue-virtual';
-import type { Column, View } from '@/core/plugin';
+import type { Column, RowDetail, View } from '@/core/plugin';
 import type { EvtxEvent } from '@/core/evtx/types';
 import { formatIso, formatTime, UTC } from '@/core/time';
 import { download, toCsv } from '@/core/csv';
@@ -135,7 +135,7 @@ type Row = any; // rows are plugin-defined objects
 type AnyColumn = Column<Row>;
 
 const props = defineProps<{ view: View<Row>; zone: string; exportName: string }>();
-const emit = defineEmits<{ open: [event: EvtxEvent] }>();
+const emit = defineEmits<{ open: [event: EvtxEvent, detail: RowDetail | undefined] }>();
 
 const ROW_HEIGHT = 27;
 
@@ -285,7 +285,7 @@ function ariaSort(sorted: false | 'asc' | 'desc'): 'ascending' | 'descending' | 
 
 function open(row: Row) {
   const event = props.view.event?.(row);
-  if (event) emit('open', event);
+  if (event) emit('open', event, props.view.detail?.(row));
 }
 
 function exportCsv() {
