@@ -8,6 +8,17 @@
       <span class="text-muted-foreground text-xs tabular-nums">{{ rows.length.toLocaleString() }} of {{ view.rows.length.toLocaleString() }} rows</span>
       <div class="ml-auto flex items-center gap-1.5">
         <Button
+          v-if="view.event"
+          variant="outline"
+          size="icon"
+          :aria-pressed="starredOnly"
+          :class="{ 'bg-muted': starredOnly }"
+          :title="starredOnly ? 'Show all rows' : 'Show starred rows only'"
+          @click="starredOnly = !starredOnly"
+        >
+          <StarIcon :class="starredOnly ? 'fill-amber-400 text-amber-400' : ''" />
+        </Button>
+        <Button
           v-if="timeColumn"
           variant="outline"
           size="icon"
@@ -38,6 +49,15 @@
         </DropdownMenu>
         <Button variant="outline" :disabled="rows.length === 0" title="CSV in the selected time zone" @click="exportCsv"><DownloadIcon />CSV</Button>
         <Button variant="outline" :disabled="rows.length === 0 || !timeColumn" title="Timesketch JSONL (UTC)" @click="exportJsonl"><DownloadIcon />JSONL</Button>
+        <Button
+          v-if="view.event"
+          variant="outline"
+          :disabled="rows.length === 0"
+          title="Printable HTML report of the filtered rows, with each record and your notes"
+          @click="exportReport"
+        >
+          <FileTextIcon />Report
+        </Button>
       </div>
     </div>
 
@@ -53,13 +73,22 @@
 
     <ContextMenu @update:open="(o: boolean) => !o && (menu = null)">
       <ContextMenuTrigger as-child>
-        <div ref="scroller" class="bg-card min-h-60 flex-1 basis-0 overflow-auto rounded-lg border" @contextmenu="onContextMenu">
-          <table class="table-fixed border-separate border-spacing-0 text-xs" :style="{ width: table.getTotalSize() + 'px', minWidth: '100%' }">
+        <div
+          ref="scroller"
+          tabindex="0"
+          class="bg-card focus-visible:ring-ring/40 min-h-60 flex-1 basis-0 overflow-auto rounded-lg border outline-none focus-visible:ring-2"
+          aria-label="Table rows: arrow keys move, Enter opens, S stars"
+          @contextmenu="onContextMenu"
+          @keydown="onKeydown"
+        >
+          <table class="table-fixed border-separate border-spacing-0 text-xs" :style="{ width: table.getTotalSize() + starWidth + 'px', minWidth: '100%' }">
             <colgroup>
+              <col v-if="view.event" :style="{ width: STAR_WIDTH + 'px' }" />
               <col v-for="h in headers" :key="h.id" :style="{ width: h.getSize() + 'px' }" />
             </colgroup>
             <thead class="sticky top-0 z-20">
               <tr>
+                <th v-if="view.event" class="bg-muted sticky left-0 z-10 border-b" aria-label="Starred"><StarIcon class="text-muted-foreground mx-auto size-3" /></th>
                 <th
                   v-for="h in headers"
                   :key="h.id"
@@ -124,6 +153,7 @@
                 </th>
               </tr>
               <tr>
+                <th v-if="view.event" class="bg-muted sticky left-0 z-10 border-b"></th>
                 <th
                   v-for="h in headers"
                   :key="h.id"
@@ -157,28 +187,42 @@
               </tr>
             </thead>
             <tbody>
-              <tr v-if="padTop > 0" aria-hidden="true"><td :colspan="headers.length" :style="{ height: padTop + 'px', padding: 0, border: 0 }"></td></tr>
+              <tr v-if="padTop > 0" aria-hidden="true"><td :colspan="colspan" :style="{ height: padTop + 'px', padding: 0, border: 0 }"></td></tr>
               <tr
                 v-for="item in virtualItems"
                 :key="String(item.key)"
                 class="group/row"
-                :class="{ 'cursor-pointer': !!(view.event || view.pivot) }"
-                @click="open(rows[item.index]!.original)"
+                :class="{ 'cursor-pointer': !!(view.event || view.pivot), selected: rows[item.index]!.id === selectedId }"
+                :aria-selected="rows[item.index]!.id === selectedId"
+                @click="activate(item.index)"
               >
+                <td
+                  v-if="view.event"
+                  class="bg-card group-hover/row:bg-muted group-[.selected]/row:bg-accent sticky left-0 z-10 h-[26px] border-b text-center group-[.selected]/row:shadow-[inset_2px_0_0_var(--primary)]"
+                >
+                  <button
+                    type="button"
+                    class="text-muted-foreground hover:text-foreground rounded-sm p-0.5"
+                    :aria-label="isStarred(rows[item.index]!.original) ? 'Remove star' : 'Star'"
+                    @click.stop="star(rows[item.index]!.original)"
+                  >
+                    <StarIcon class="size-3" :class="isStarred(rows[item.index]!.original) ? 'fill-amber-400 text-amber-400' : 'opacity-40 group-hover/row:opacity-100'" />
+                  </button>
+                </td>
                 <td
                   v-for="h in headers"
                   :key="h.id"
                   :data-row="item.index"
                   :data-col="h.id"
-                  class="bg-card group-hover/row:bg-muted h-[26px] truncate border-b px-1.5"
+                  class="bg-card group-hover/row:bg-muted group-[.selected]/row:bg-accent h-[26px] truncate border-b px-1.5"
                   :class="[cellClass(rows[item.index]!.original, h.id), { 'z-10': isPinned(h) }]"
                   :style="pinStyle(h)"
                   :title="cellText(rows[item.index]!.original, h.id)"
                 >{{ cellText(rows[item.index]!.original, h.id) }}</td>
               </tr>
-              <tr v-if="padBottom > 0" aria-hidden="true"><td :colspan="headers.length" :style="{ height: padBottom + 'px', padding: 0, border: 0 }"></td></tr>
+              <tr v-if="padBottom > 0" aria-hidden="true"><td :colspan="colspan" :style="{ height: padBottom + 'px', padding: 0, border: 0 }"></td></tr>
               <tr v-if="rows.length === 0">
-                <td :colspan="headers.length" class="text-muted-foreground py-6 text-center">
+                <td :colspan="colspan" class="text-muted-foreground py-6 text-center">
                   {{ view.rows.length === 0 ? 'No matching events in the loaded logs.' : 'No rows match the current filters.' }}
                 </td>
               </tr>
@@ -200,6 +244,7 @@
         <ContextMenuItem @select="copyRow(menu.row)"><ClipboardListIcon />Copy row</ContextMenuItem>
         <template v-if="view.event?.(menu.row)">
           <ContextMenuSeparator />
+          <ContextMenuItem @select="star(menu.row)"><StarIcon />{{ isStarred(menu.row) ? 'Remove star' : 'Star event' }}</ContextMenuItem>
           <ContextMenuItem @select="open(menu.row)"><SquareArrowOutUpRightIcon />Open record</ContextMenuItem>
         </template>
       </ContextMenuContent>
@@ -241,6 +286,7 @@ import {
   CopyIcon,
   DownloadIcon,
   EyeOffIcon,
+  FileTextIcon,
   FilterIcon,
   FilterXIcon,
   MoveHorizontalIcon,
@@ -249,6 +295,7 @@ import {
   RotateCcwIcon,
   SearchIcon,
   SquareArrowOutUpRightIcon,
+  StarIcon,
 } from '@lucide/vue';
 import { Button } from '@/components/ui/button';
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuTrigger } from '@/components/ui/context-menu';
@@ -258,8 +305,10 @@ import type { Column, Pivot, RowDetail, Tone, View } from '@/core/plugin';
 import type { EvtxEvent } from '@/core/evtx/types';
 import { download } from '@/core/csv';
 import { cellText as displayText, tableToCsv, tableToJsonl, type TableSnapshot } from '@/core/tableExport';
+import { buildReport } from '@/core/report';
 import { describe, filterFor, filterOut, negate, passes, type ColumnFilter } from '@/core/tableFilter';
 import { eventStore } from '@/core/store';
+import { starOf, toggleStar } from '@/composables/useStars';
 import FilterChips, { type Chip } from './table/FilterChips.vue';
 import TableHistogram from './table/TableHistogram.vue';
 import TimeRangeFilter from './table/TimeRangeFilter.vue';
@@ -275,12 +324,18 @@ const props = defineProps<{
   view: View<Row>;
   zone: string;
   exportName: string;
+  /** Heading of exported reports. */
+  title?: string;
   /** Column filters to start with (column id → value), e.g. from a pivot. */
   filters?: Record<string, string>;
+  /** Search text, time range and a record to select when the table opens (from the page address). */
+  initial?: { search?: string; from?: number; to?: number; anchor?: number };
 }>();
 const emit = defineEmits<{ open: [event: EvtxEvent, detail: RowDetail | undefined]; pivot: [target: Pivot] }>();
+defineExpose({ step, searchFor });
 
 const ROW_HEIGHT = 26;
+const STAR_WIDTH = 26;
 
 const TONE: Record<Tone, string> = {
   danger: 'text-danger font-semibold',
@@ -384,15 +439,26 @@ const columns = props.view.columns.map(c => ({
   minSize: 50,
 }));
 
-/** Pivot presets: pick-list columns match the value exactly, others contain it. */
+/** Pivot presets: pick-list columns match the value exactly, others contain it. A time range from the address applies to the first time column. */
 const presetFilters = Object.entries(props.filters ?? {}).map(([id, value]) => ({
   id,
   value: (defs.value[id]?.facet ? { kind: 'values', values: [value] } : { kind: 'text', text: value }) as ColumnFilter,
 }));
+if (timeColumn.value && (props.initial?.from !== undefined || props.initial?.to !== undefined))
+  presetFilters.push({ id: timeColumn.value.id, value: { kind: 'range', from: props.initial.from, to: props.initial.to } });
 
-const data = computed(() => markRaw(props.view.rows));
-const search = ref('');
-const debounced = ref('');
+const starredOnly = ref(false);
+const isStarred = (row: Row) => {
+  const e = props.view.event?.(row);
+  return !!e && !!starOf(e);
+};
+const star = (row: Row) => {
+  const e = props.view.event?.(row);
+  if (e) toggleStar(e);
+};
+const data = computed(() => markRaw(starredOnly.value ? props.view.rows.filter(isStarred) : props.view.rows));
+const search = ref(props.initial?.search ?? '');
+const debounced = ref(search.value);
 let timer: ReturnType<typeof setTimeout> | undefined;
 watch(search, v => {
   clearTimeout(timer);
@@ -419,7 +485,7 @@ const table = useTable({
   getColumnCanGlobalFilter: (column: { id: string }) => defs.value[column.id]?.kind !== 'time',
 } as never) as any;
 
-watch(debounced, v => table.setGlobalFilter(v || undefined));
+watch(debounced, v => table.setGlobalFilter(v || undefined), { immediate: true });
 
 watch(
   () => [table.atoms.columnOrder.get(), table.atoms.columnSizing.get(), table.atoms.columnPinning.get(), table.atoms.columnVisibility.get()],
@@ -448,8 +514,10 @@ const rows = computed(() => table.getRowModel().rows as { id: string; original: 
 /** Headers in display order: pinned columns first. */
 const headers = computed<THeader[]>(() => [...table.getStartLeafHeaders(), ...table.getCenterLeafHeaders()]);
 
+const starWidth = computed(() => (props.view.event ? STAR_WIDTH : 0));
+const colspan = computed(() => headers.value.length + (props.view.event ? 1 : 0));
 const isPinned = (h: THeader) => h.column.getIsPinned() === 'start';
-const pinStyle = (h: THeader): CSSProperties | undefined => (isPinned(h) ? { position: 'sticky', left: `${h.column.getStart('start')}px` } : undefined);
+const pinStyle = (h: THeader): CSSProperties | undefined => (isPinned(h) ? { position: 'sticky', left: `${h.column.getStart('start') + starWidth.value}px` } : undefined);
 
 // Reordering by dragging headers.
 const dragId = ref<string | null>(null);
@@ -492,11 +560,13 @@ const chips = computed<Chip[]>(() => {
     negatable: f.value.kind !== 'range',
   }));
   if (debounced.value) out.push({ id: '__search', text: `Search: "${debounced.value}"`, negatable: false });
+  if (starredOnly.value) out.push({ id: '__starred', text: 'Starred only', negatable: false });
   return out;
 });
 
 function removeChip(id: string) {
   if (id === '__search') search.value = debounced.value = '';
+  else if (id === '__starred') starredOnly.value = false;
   else setFilter(id, undefined);
 }
 
@@ -509,6 +579,7 @@ function clearFilters() {
   table.resetColumnFilters(true);
   search.value = '';
   debounced.value = '';
+  starredOnly.value = false;
 }
 
 const timeRange = computed(() => (timeColumn.value ? rangeOf(table.atoms.columnFilters.get().find((f: { id: string }) => f.id === timeColumn.value!.id)?.value) : undefined));
@@ -592,6 +663,65 @@ function open(row: Row) {
   if (event) emit('open', event, props.view.detail?.(row));
 }
 
+// ---------------------------------------------------------------- selection and keyboard
+
+const selectedId = ref<string | null>(null);
+
+function activate(index: number) {
+  const row = rows.value[index];
+  if (!row) return;
+  selectedId.value = row.id;
+  open(row.original);
+}
+
+/** Moves the selection (and the open record) by delta rows in the current order. */
+function step(delta: number) {
+  const list = rows.value;
+  if (!list.length) return;
+  const at = list.findIndex(r => r.id === selectedId.value);
+  const index = Math.max(0, Math.min(list.length - 1, at < 0 ? 0 : at + delta));
+  virtualizer.value.scrollToIndex(index, { align: 'auto' });
+  const row = list[index]!;
+  selectedId.value = row.id;
+  // Stepping opens records; it never pivots to another view.
+  const event = props.view.event?.(row.original);
+  if (event) emit('open', event, props.view.detail?.(row.original));
+}
+
+function searchFor(text: string) {
+  search.value = debounced.value = text;
+}
+
+function onKeydown(e: KeyboardEvent) {
+  if (e.target !== scroller.value || e.altKey || e.ctrlKey || e.metaKey) return;
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    e.preventDefault();
+    step(e.key === 'ArrowDown' ? 1 : -1);
+  } else if (e.key === 'Enter') {
+    const at = rows.value.findIndex(r => r.id === selectedId.value);
+    if (at >= 0) activate(at);
+  } else if (e.key === 's' || e.key === 'S') {
+    const row = rows.value.find(r => r.id === selectedId.value);
+    if (row) star(row.original);
+  }
+}
+
+// A record handed over in the address (e.g. surrounding events) is selected and scrolled to.
+let anchored = props.initial?.anchor === undefined;
+watch(
+  rows,
+  list => {
+    if (anchored) return;
+    const index = list.findIndex(r => props.view.event?.(r.original)?.id === props.initial!.anchor);
+    if (index < 0) return;
+    anchored = true;
+    selectedId.value = list[index]!.id;
+    requestAnimationFrame(() => virtualizer.value.scrollToIndex(index, { align: 'center' }));
+    open(list[index]!.original);
+  },
+  { immediate: true },
+);
+
 // ---------------------------------------------------------------- export
 
 function snapshot(): TableSnapshot<Row> {
@@ -607,6 +737,27 @@ const fileName = (ext: string) => `glossy_${props.exportName}_${new Date().toISO
 
 function exportCsv() {
   download(fileName('csv'), tableToCsv(snapshot(), props.zone));
+}
+
+const REPORT_LIMIT = 2000;
+
+function exportReport() {
+  if (rows.value.length > REPORT_LIMIT) {
+    toast.warning(`Reports hold up to ${REPORT_LIMIT.toLocaleString()} rows; this table has ${rows.value.length.toLocaleString()}. Filter it first (or star the events that matter).`);
+    return;
+  }
+  const snap = snapshot();
+  const html = buildReport({
+    title: props.title ?? props.exportName,
+    zone: props.zone,
+    columns: snap.columns,
+    rows: snap.rows,
+    event: props.view.event,
+    sources: eventStore.sources,
+    note: e => starOf(e)?.note,
+    generatedAt: Date.now(),
+  });
+  download(fileName('html'), html, 'text/html;charset=utf-8');
 }
 
 function exportJsonl() {

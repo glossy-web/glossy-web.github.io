@@ -25,7 +25,7 @@ function learnSids(events: readonly EvtxEvent[]): Map<string, string> {
   return names;
 }
 
-export function createContext(store: EventStore): PluginContext {
+export function createContext(store: EventStore, starred: PluginContext['starred'] = () => undefined): PluginContext {
   let sids: Map<string, string> | null = null;
   return {
     select: selectors => store.select(selectors),
@@ -37,5 +37,6 @@ export function createContext(store: EventStore): PluginContext {
     },
     source: e => store.sources.find(s => s.index === e.src),
     files: () => store.sources,
+    starred,
   };
 }

@@ -86,3 +86,26 @@ describe('column filters', () => {
     expect(describeFilter({ kind: 'range', from: Date.UTC(2024, 4, 1) }, 'Time', 'Asia/Seoul')).toBe('Time from 2024-05-01 09:00:00 +09:00');
   });
 });
+
+describe('report', () => {
+  it('escapes log content and embeds no scripts', async () => {
+    const { buildReport, escapeHtml } = await import('@/core/report');
+    expect(escapeHtml(`<script>alert("x")</script> & 'y'`)).toBe('&lt;script&gt;alert(&quot;x&quot;)&lt;/script&gt; &amp; &#39;y&#39;');
+    const e = { id: 0, src: 0, chunk: 0, seq: 1, recordId: 7, time: '2024-05-01T00:00:00.000Z', ts: Date.UTC(2024, 4, 1), provider: 'P', eventId: 4688, qualifiers: null, version: 0, level: 4, task: null, opcode: null, keywords: '', channel: 'Security', computer: 'HOST<1>', userSid: '', pid: null, tid: null, activityId: '', data: { CommandLine: '<img src=x onerror=alert(1)>' }, list: [], payload: 'EventData', message: '' };
+    const html = buildReport({
+      title: 'Findings <b>',
+      zone: 'UTC',
+      columns: [{ id: 'time', label: 'Time', kind: 'time', value: (r: typeof e) => r.ts }],
+      rows: [e],
+      event: r => r,
+      sources: [],
+      note: () => 'look <here>',
+      generatedAt: Date.UTC(2024, 4, 2),
+    });
+    expect(html).not.toMatch(/<script|<img|onerror=alert\(1\)>/);
+    expect(html).toContain('&lt;img src=x onerror=alert(1)&gt;');
+    expect(html).toContain('HOST&lt;1&gt;');
+    expect(html).toContain('<p class="note">look &lt;here&gt;</p>');
+    expect(html).toContain('<title>Findings &lt;b&gt;</title>');
+  });
+});

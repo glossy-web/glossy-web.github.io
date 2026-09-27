@@ -20,6 +20,7 @@ import { wireless } from './wireless';
 import { powershell } from './powershell';
 import { defender } from './defender';
 import { createTimeline } from './timeline';
+import { starred } from './starred';
 
 /** Analysis modules, in sidebar order within their category. */
 const modules: Plugin[] = [
@@ -44,7 +45,7 @@ const modules: Plugin[] = [
   wireless,
 ];
 
-/** Every page: All Events and the timeline over the modules, then the modules. */
-export const plugins: Plugin[] = [showAll, createTimeline(modules), ...modules];
+/** Every page: All Events, the timeline over the modules and the starred events, then the modules. */
+export const plugins: Plugin[] = [showAll, createTimeline(modules), starred, ...modules];
 
 export const pluginByName = new Map(plugins.map(p => [p.name, p]));

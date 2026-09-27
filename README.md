@@ -49,13 +49,19 @@ The Timeline page runs every module with its default options and puts their rows
 | Document Printing | Printed documents with owner, client, printer, pages; spool file; default printer changes | PrintService 307/800/801/805/812/823/842 |
 | Wireless & Networks | Wi-Fi connections, failures, networks and their security; network connections by name | WLAN-AutoConfig 8000–8003, NetworkProfile 10000/10001 |
 
-Every module has an event table that opens any row as the full record, and every page and view has its own address (`#/m/logon/sessions`), so the back button and links work. The tables follow Timeline Explorer and Kibana:
+Every module has an event table, and every page and view has its own address (`#/m/logon/sessions`), so the back button and links work. The tables follow Timeline Explorer and Kibana:
 
 - A histogram of the filtered rows sits above the table; drag across bars (or click one) to filter to that time, and it zooms to the selection down to minutes.
 - Pick-list columns filter on several values at once, with counts and an exclude switch; other columns filter on text; time columns take a from/to range in the selected zone.
 - Right-click a cell to filter for or filter out its value, show events from or until a time, or copy the value or row. Active filters show as chips: click one to invert it, or remove it.
 - Columns can be resized, dragged into a new order, pinned to the left and hidden; the layout is remembered per view in this browser.
-- CSV and Timesketch JSONL export the filtered rows.
+- CSV and Timesketch JSONL export the filtered rows; **Report** writes a self-contained HTML report of them with each full record and your notes.
+
+**Records, stars and context**
+
+- Clicking a row opens the record in a side panel (General, XML re-read from the file, JSON). Arrow keys or the panel's arrows step through the table's current order; each field can search the table or all events for its value.
+- **Surrounding events** opens All Events for ±1 minute to ±1 hour around the record, across every loaded log, with the record selected (Timesketch's context search).
+- Star events (star column, panel, or **S**) and add a note; the **Starred** page lists them for a report. Stars are kept in this browser by record identity, so they return when the same logs (or other copies of them) are loaded again.
 
 Findings are leads, not verdicts: check them against the original record (XML view) and other artifacts.
 
@@ -63,7 +69,7 @@ Findings are leads, not verdicts: check them against the original record (XML vi
 
 Open the site, then drop `.evtx` files or a whole `C:\Windows\System32\winevt\Logs` folder onto the page (or use **Add files** / **Add folder**). Collect logs as raw copies (e.g. with KAPE); exporting through Event Viewer or `wevtutil epl` rewrites the files.
 
-Keyboard: **Ctrl+K** opens the command palette (go to any module, add files, toggle dark mode), **Ctrl+B** collapses the sidebar. The page is dark by default; the sun/moon button switches it and the choice is remembered.
+Keyboard: **Ctrl+K** opens the command palette (go to any module, add files, toggle dark mode), **Ctrl+B** collapses the sidebar; in a table, **↑/↓** move between records, **Enter** opens one, **S** stars it and **Esc** closes the panel. The page is dark by default; the sun/moon button switches it and the choice is remembered.
 
 Several useful logs are off by default and must be enabled before an incident to exist: `TaskScheduler/Operational`, `PrintService/Operational`, `DriverFrameworks-UserMode/Operational`, process command-line auditing for 4688, and object-access auditing (SACLs) for 4657/4663.
 

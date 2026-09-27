@@ -140,6 +140,7 @@ export class EventStore {
     this.hashes.delete(sha256);
   }
 
+  /** A record already loaded from another file: same computer, channel, EventRecordID and time (see recordKey). */
   isDuplicate(e: ParsedEvent): boolean {
     const key = `${e.computer}\u0001${e.channel}`;
     let ids = this.seen.get(key);
@@ -237,3 +238,11 @@ export class EventStore {
 }
 
 export const eventStore = new EventStore();
+
+/**
+ * Identity of a record across copies of a log (shadow copies, archives): the fields isDuplicate
+ * compares. Annotations such as stars are keyed on it so they survive loading another copy.
+ */
+export function recordKey(e: Pick<EvtxEvent, 'computer' | 'channel' | 'recordId' | 'time'>): string {
+  return `${e.computer}\u0001${e.channel}\u0001${e.recordId}\u0001${e.time}`;
+}
