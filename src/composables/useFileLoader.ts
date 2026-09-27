@@ -1,90 +1,151 @@
-import { ref } from 'vue';
-import { EvtxFile } from '@ts-evtx/core';
-import { eventStore, type EventSource } from '@/core/store';
+import { reactive } from 'vue';
+import { eventStore } from '@/core/store';
+import { EVTX_CHUNK_SIZE, EVTX_FILE_HEADER_SIZE } from '@/core/parseChunks';
 import type { EvtxEvent } from '@/core/evtx/types';
-import { LEVEL_NAMES } from '@/core/evtx/types';
+import type { WorkerRequest, WorkerResponse } from '@/parser/protocol';
 
-type AnyRec = Record<string, unknown>;
+export interface FileProgress {
+  name: string;
+  size: number;
+  status: 'queued' | 'reading' | 'parsing' | 'done' | 'skipped' | 'failed';
+  progress: number;
+  message: string;
+}
 
-function parseXmlFields(xml: string): Record<string, unknown> {
-  const r: Record<string, unknown> = {};
-  const pm = xml.match(/Provider Name=["']([^"']+)["']/);
-  if (pm) r.provider = pm[1];
-  const em = xml.match(/<EventID[^>]*>(\d+)<\/EventID>/);
-  if (em) r.eventId = parseInt(em[1], 10);
-  const lm = xml.match(/<Level[^>]*>(\d+)<\/Level>/);
-  if (lm) r.level = parseInt(lm[1], 10);
-  const cm = xml.match(/<Channel[^>]*>([^<]+)<\/Channel>/);
-  if (cm) r.channel = cm[1];
-  const om = xml.match(/<Computer[^>]*>([^<]+)<\/Computer>/);
-  if (om) r.computer = om[1];
-  const edm = xml.match(/<EventData[^>]*>([\s\S]*?)<\/EventData>/);
-  if (edm) {
-    const d: Record<string, unknown> = {};
-    const re = /<Data Name=["']([^"']+)["'][^>]*>([^<]*)<\/Data>/g;
-    let m: RegExpExecArray | null;
-    while ((m = re.exec(edm[1])) !== null) d[m[1]] = m[2] || '';
-    r.data = d;
+export const loader = reactive({
+  busy: false,
+  files: [] as FileProgress[],
+});
+
+const createWorker = () => new Worker(new URL('../parser/evtx.worker.ts', import.meta.url), { type: 'module' });
+
+type Handler = (msg: WorkerResponse) => void;
+
+/** A worker plus the handler of the job it is currently running. */
+class Slot {
+  readonly worker = createWorker();
+  private handlers = new Map<number, Handler>();
+
+  constructor() {
+    this.worker.onmessage = (e: MessageEvent<WorkerResponse>) => this.handlers.get(e.data.job)?.(e.data);
   }
-  return r;
+
+  run(request: WorkerRequest, transfer: Transferable[], handler: Handler): void {
+    this.handlers.set(request.job, handler);
+    this.worker.postMessage(request, transfer);
+  }
+
+  release(job: number): void {
+    this.handlers.delete(job);
+  }
 }
 
-function buildEvent(rec: AnyRec, sourceFile: string, globalId: number): EvtxEvent | null {
-  try {
-    const ts = (rec as unknown as { timestampAsDate: () => Date }).timestampAsDate();
-    const rn = (rec as unknown as { recordNum: () => bigint }).recordNum();
+let parseSlots: Slot[] = [];
+let xmlSlot: Slot | null = null;
+let nextJob = 1;
 
-    let xml = '';
-    try { xml = (rec as unknown as { renderXml: () => string }).renderXml(); } catch {}
-
-    const fields = parseXmlFields(xml);
-    const level = (fields.level as number) ?? 0;
-
-    return {
-      id: globalId, recordId: rn, timestamp: ts,
-      provider: (fields.provider as string) || '',
-      providerGuid: '', eventId: (fields.eventId as number) ?? 0,
-      qualifiers: null, version: 0, level,
-      levelName: LEVEL_NAMES[level] || `Level(${level})`,
-      task: 0, opcode: 0, keywords: '0x0',
-      channel: (fields.channel as string) || '',
-      computer: (fields.computer as string) || '',
-      securityUserId: null, processId: null, threadId: null, activityId: null,
-      data: (fields.data as Record<string, unknown>) || {}, rawXml: xml, sourceFile,
-    };
-  } catch { return null; }
+function poolSize(): number {
+  const cores = typeof navigator !== 'undefined' ? navigator.hardwareConcurrency || 2 : 2;
+  return Math.max(1, Math.min(4, cores - 1));
 }
 
-export function useFileLoader() {
-  const isLoading = ref(false);
-  const loadProgress = ref(0);
-  const errors = ref<string[]>([]);
-  const sources = ref<EventSource[]>([]);
+async function sha256(buffer: ArrayBuffer): Promise<string> {
+  const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', buffer));
+  return Array.from(digest, b => b.toString(16).padStart(2, '0')).join('');
+}
 
-  async function loadFiles(files: File[]): Promise<void> {
-    if (files.length === 0) return;
-    isLoading.value = true; loadProgress.value = 0; errors.value = [];
-    const evtxFiles = files.filter(f => f.name.toLowerCase().endsWith('.evtx'));
-    if (evtxFiles.length === 0) { errors.value.push('No .evtx files'); isLoading.value = false; return; }
-    let completed = 0; const total = evtxFiles.length;
+async function parseOne(slot: Slot, file: File, progress: FileProgress): Promise<void> {
+  progress.status = 'reading';
+  const buffer = await file.arrayBuffer();
+  const hash = await sha256(buffer);
+  if (eventStore.hasFile(hash)) {
+    progress.status = 'skipped';
+    progress.message = 'Identical file already loaded (same SHA-256)';
+    return;
+  }
+  const builder = eventStore.beginSource({ name: file.name, size: file.size, sha256: hash, file });
+  progress.status = 'parsing';
+  const job = nextJob++;
+  await new Promise<void>(resolve => {
+    slot.run({ type: 'parse', job, buffer }, [buffer], msg => {
+      if (msg.type === 'events') {
+        builder.add(msg.events);
+        progress.progress = (msg.slot + 1) / Math.max(1, msg.slots);
+      } else if (msg.type === 'done') {
+        const source = builder.finish(msg.report);
+        const r = msg.report;
+        progress.status = 'done';
+        progress.progress = 1;
+        progress.message =
+          `${source.added.toLocaleString()} records` +
+          (source.duplicates ? `, ${source.duplicates.toLocaleString()} duplicates skipped` : '') +
+          (r.chunkErrors.length || r.recordErrors ? `, ${r.chunkErrors.length + r.recordErrors} parse errors` : '');
+        slot.release(job);
+        resolve();
+      } else if (msg.type === 'error') {
+        if (builder.added === 0) eventStore.discardSource(hash);
+        progress.status = 'failed';
+        progress.message = msg.message;
+        slot.release(job);
+        resolve();
+      }
+    });
+  });
+}
 
-    for (const file of evtxFiles) {
-      try {
-        const buf = await file.arrayBuffer();
-        const uint8 = new Uint8Array(buf);
-        const ef = new (EvtxFile as unknown as new (b: Uint8Array) => AnyRec)(uint8);
-        const evts: EvtxEvent[] = []; let gid = 0;
-        for (const rec of (ef as unknown as { records: () => Iterable<AnyRec> }).records()) {
-          const ev = buildEvent(rec, file.name, gid);
-          if (ev) { evts.push(ev); gid++; }
-        }
-        const sid = eventStore.addSource(file.name, { events: evts, errors: [] });
-        sources.value.push({ id: sid, name: file.name, eventCount: evts.length, errors: [] });
-      } catch (e) { errors.value.push(`${file.name}: ${String(e)}`); }
-      finally { completed++; loadProgress.value = Math.round((completed / total) * 100); }
+/** Parses the given files in a pool of workers. Non-.evtx files are reported and ignored. */
+export async function loadFiles(files: File[]): Promise<void> {
+  const queue: [File, FileProgress][] = [];
+  for (const file of files) {
+    const progress: FileProgress = reactive({ name: file.name, size: file.size, status: 'queued', progress: 0, message: '' });
+    loader.files.push(progress);
+    if (!file.name.toLowerCase().endsWith('.evtx')) {
+      progress.status = 'skipped';
+      progress.message = 'Not an .evtx file';
+      continue;
     }
-    isLoading.value = false;
+    queue.push([file, progress]);
   }
-  function clearAll() { eventStore.reset(); sources.value = []; errors.value = []; loadProgress.value = 0; }
-  return { isLoading, loadProgress, errors, sources, loadFiles, clearAll };
+  if (queue.length === 0) return;
+
+  loader.busy = true;
+  if (parseSlots.length === 0) parseSlots = Array.from({ length: poolSize() }, () => new Slot());
+  // Large files first so the pool finishes together.
+  queue.sort((a, b) => b[0].size - a[0].size);
+  await Promise.all(
+    parseSlots.map(async slot => {
+      for (let item = queue.shift(); item; item = queue.shift()) {
+        const [file, progress] = item;
+        try {
+          await parseOne(slot, file, progress);
+        } catch (err) {
+          progress.status = 'failed';
+          progress.message = err instanceof Error ? err.message : String(err);
+        }
+      }
+    }),
+  );
+  loader.busy = false;
+}
+
+/** Re-reads one chunk of the event's source file and renders the record as XML. */
+export async function renderXml(event: EvtxEvent): Promise<string | null> {
+  const source = eventStore.sources.find(s => s.index === event.src);
+  if (!source) return null;
+  const start = EVTX_FILE_HEADER_SIZE + event.chunk * EVTX_CHUNK_SIZE;
+  const chunk = await source.file.slice(start, start + EVTX_CHUNK_SIZE).arrayBuffer();
+  xmlSlot ??= new Slot();
+  const slot = xmlSlot;
+  const job = nextJob++;
+  return new Promise(resolve => {
+    slot.run({ type: 'xml', job, chunk, recordId: event.seq }, [chunk], msg => {
+      slot.release(job);
+      resolve(msg.type === 'xml' ? msg.xml : null);
+    });
+  });
+}
+
+export function clearAll(): void {
+  eventStore.reset();
+  loader.files.splice(0);
 }

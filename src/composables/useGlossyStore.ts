@@ -1,37 +1,31 @@
-import { ref, computed } from 'vue';
-import { eventStore, type EventSource } from '@/core/store';
+import { ref, watch } from 'vue';
+import { browserZone, UTC } from '@/core/time';
 
-const sources = ref<EventSource[]>([]);
-const isLoading = ref(false);
-const loadProgress = ref(0);
-const error = ref<string | null>(null);
-const activePlugin = ref('showAll');
-const eventCount = computed(() => eventStore.getAllEvents().length);
-const statistics = computed(() => eventStore.getStatistics());
+const TZ_KEY = 'glossy.timeZone';
 
-function setActivePlugin(name: string) {
-  activePlugin.value = name;
+function readZone(): string {
+  try {
+    return localStorage.getItem(TZ_KEY) || UTC;
+  } catch {
+    return UTC;
+  }
 }
 
-function resetAll() {
-  eventStore.reset();
-  sources.value = [];
-  isLoading.value = false;
-  loadProgress.value = 0;
-  error.value = null;
-}
+/** Display time zone. UTC by default; the choice is remembered per browser. */
+export const timeZone = ref(readZone());
 
-export function useGlossyStore() {
-  return {
-    sources,
-    isLoading,
-    loadProgress,
-    error,
-    activePlugin,
-    eventCount,
-    statistics,
-    setActivePlugin,
-    resetAll,
-    eventStore,
-  };
-}
+watch(timeZone, zone => {
+  try {
+    localStorage.setItem(TZ_KEY, zone);
+  } catch {
+    /* storage unavailable (private mode); the setting just is not remembered */
+  }
+});
+
+/** Page shown in the main area: '__overview' or a plugin name. */
+export const activePage = ref('__overview');
+
+/** Per-plugin option toggles (noise filters etc.), keyed by plugin name. */
+export const pluginOptions = ref<Record<string, Record<string, boolean>>>({});
+
+export { browserZone };
