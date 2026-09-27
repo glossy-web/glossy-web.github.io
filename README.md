@@ -49,13 +49,15 @@ The Timeline page runs every module with its default options and puts their rows
 | Document Printing | Printed documents with owner, client, printer, pages; spool file; default printer changes | PrintService 307/800/801/805/812/823/842 |
 | Wireless & Networks | Wi-Fi connections, failures, networks and their security; network connections by name | WLAN-AutoConfig 8000–8003, NetworkProfile 10000/10001 |
 
-Every module has an event table (filter any column, search all columns, sort, CSV and JSONL export) and opens any row as the full record.
+Every module has an event table (filter any column, search all columns, sort, CSV and JSONL export) and opens any row as the full record. Every page and view has its own address (`#/m/logon/sessions`), so the back button and links work.
 
 Findings are leads, not verdicts: check them against the original record (XML view) and other artifacts.
 
 ## Usage
 
 Open the site, then drop `.evtx` files or a whole `C:\Windows\System32\winevt\Logs` folder onto the page (or use **Add files** / **Add folder**). Collect logs as raw copies (e.g. with KAPE); exporting through Event Viewer or `wevtutil epl` rewrites the files.
+
+Keyboard: **Ctrl+K** opens the command palette (go to any module, add files, toggle dark mode), **Ctrl+B** collapses the sidebar. The page is dark by default; the sun/moon button switches it and the choice is remembered.
 
 Several useful logs are off by default and must be enabled before an incident to exist: `TaskScheduler/Operational`, `PrintService/Operational`, `DriverFrameworks-UserMode/Operational`, process command-line auditing for 4688, and object-access auditing (SACLs) for 4657/4663.
 
@@ -77,7 +79,7 @@ The Rust side is a thin wrapper in [`wasm/src/lib.rs`](wasm/src/lib.rs); everyth
 - `src/core` — record normalization, the event store (dedupe, integrity checks), time zone handling, CSV and JSONL export
 - `src/parser` — the Web Worker that runs the WebAssembly parser
 - `src/plugins` — one folder per analysis module; each view's `timeline` mapping decides what reaches the Timeline
-- `src/components` — UI (tables use TanStack Table + Virtual, charts use ECharts)
+- `src/components` — UI: Tailwind CSS v4 with [shadcn-vue](https://www.shadcn-vue.com/) components (Reka UI, compact "Mira" style) in `src/components/ui`, tables on TanStack Table + Virtual, charts on ECharts
 
 ## Deployment
 

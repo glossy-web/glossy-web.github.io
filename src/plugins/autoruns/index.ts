@@ -191,7 +191,7 @@ export const autoruns: Plugin = {
   name: 'autoruns',
   label: 'Autoruns & Persistence',
   category: 'System',
-  icon: 'play-circle',
+  icon: 'circle-play',
   description:
     'Scheduled tasks (Task Scheduler log and Security 4698–4702 with the task command), autostart registry values (4657 with a SACL, or Sysmon 13), files written to Startup folders (4663) and WMI event consumers (5861).',
   sources: SOURCES,

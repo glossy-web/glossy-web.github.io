@@ -145,7 +145,7 @@ export const services: Plugin = {
   name: 'services',
   label: 'Services',
   category: 'System',
-  icon: 'gear-wide-connected',
+  icon: 'cog',
   description:
     'Service installs (7045, 4697) with image path and account, start-type changes, crashes and state changes. Image paths typical of remote execution tools and payloads are flagged for review.',
   sources: SOURCES,

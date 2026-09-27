@@ -67,7 +67,7 @@ export const timeChange: Plugin = {
   name: 'timeChange',
   label: 'Time Change',
   category: 'System',
-  icon: 'clock-history',
+  icon: 'clock',
   description:
     'System clock changes with the size of the jump. Security 4616 names the account and process that changed the time; large or backward jumps can indicate timestamp tampering and affect every other timeline.',
   sources: SOURCES,

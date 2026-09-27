@@ -176,7 +176,7 @@ export const rdpLogon: Plugin = {
   name: 'rdpLogon',
   label: 'RDP',
   category: 'Account',
-  icon: 'display',
+  icon: 'monitor',
   description:
     'Remote Desktop, inbound (131 connection → 1149 authentication → 4624 type 10 → LSM 21/22, 24/25, 23) and outbound (RDP client 1024/1102). IP scope is classified locally; no lookups leave the browser.',
   sources: SOURCES,

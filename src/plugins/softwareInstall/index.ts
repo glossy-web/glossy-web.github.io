@@ -137,7 +137,7 @@ export const softwareInstall: Plugin = {
   name: 'softwareInstall',
   label: 'Software Install',
   category: 'Application',
-  icon: 'box-seam',
+  icon: 'package',
   description:
     'Software installs and removals from Windows Installer (MsiInstaller), the Program-Inventory log (Windows 7/8), Start menu shortcuts (Shell-Core 28115) and audited Uninstall registry keys (4657).',
   sources: SOURCES,

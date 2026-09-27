@@ -1,90 +1,82 @@
 <template>
-  <div class="overlay" @click.self="$emit('close')">
-    <div
-      ref="dialog"
-      class="dialog shadow-lg rounded border"
-      role="dialog"
-      aria-modal="true"
-      :aria-label="`Event ${event.eventId} from ${event.provider}`"
-      tabindex="-1"
-      @keydown.esc="$emit('close')"
-    >
-      <header class="d-flex align-items-center gap-2 px-3 py-2 border-bottom">
-        <span class="badge" :class="levelClass">{{ levelName(event.level) }}</span>
-        <h2 class="h6 mb-0 text-truncate">Event {{ event.eventId }} · {{ event.provider }}</h2>
-        <button type="button" class="btn-close ms-auto" aria-label="Close" @click="$emit('close')"></button>
-      </header>
+  <Dialog :open="true" @update:open="(v: boolean) => !v && $emit('close')">
+    <DialogContent class="flex max-h-[85vh] flex-col gap-0 p-0 sm:max-w-4xl">
+      <DialogHeader class="flex-row items-center gap-2 border-b px-4 py-2.5">
+        <Badge :variant="level.variant" :class="level.class">{{ levelName(event.level) }}</Badge>
+        <DialogTitle class="truncate text-sm">Event {{ event.eventId }} · {{ event.provider }}</DialogTitle>
+        <DialogDescription class="sr-only">Record {{ event.recordId }} from {{ source?.name }}</DialogDescription>
+      </DialogHeader>
 
-      <nav class="px-3 pt-2">
-        <ul class="nav nav-tabs small">
-          <li v-for="t in tabs" :key="t.id" class="nav-item">
-            <button type="button" class="nav-link" :class="{ active: tab === t.id }" @click="select(t.id)">{{ t.label }}</button>
-          </li>
-        </ul>
-      </nav>
+      <Tabs :model-value="tab" class="min-h-0 flex-1 gap-0" @update:model-value="v => select(v as TabId)">
+        <TabsList variant="line" class="px-3 pt-1.5">
+          <TabsTrigger v-for="t in tabs" :key="t.id" :value="t.id" class="flex-none">{{ t.label }}</TabsTrigger>
+        </TabsList>
+        <div class="min-h-0 flex-1 overflow-auto px-4 py-3">
+          <template v-if="tab === 'general'">
+            <template v-if="extra">
+              <h3 class="mb-1.5 text-xs font-semibold">{{ extra.title }}</h3>
+              <pre class="bg-muted/50 mb-3 max-h-[45vh] overflow-auto rounded-md border p-2.5 font-mono text-[11px] break-all whitespace-pre-wrap">{{ extra.text }}</pre>
+            </template>
+            <table class="mb-3 w-full text-xs">
+              <tbody class="[&_th]:text-muted-foreground [&_td]:py-0.5 [&_th]:w-48 [&_th]:py-0.5 [&_th]:pr-3 [&_th]:text-left [&_th]:align-top [&_th]:font-medium [&_th]:whitespace-nowrap">
+                <tr><th>Time ({{ zone }})</th><td class="tabular-nums">{{ formatTime(event.ts, zone) }}</td></tr>
+                <tr><th>SystemTime (UTC)</th><td class="font-mono">{{ event.time }}</td></tr>
+                <tr><th>Provider</th><td>{{ event.provider }}</td></tr>
+                <tr><th>Event ID</th><td>{{ event.eventId }}<span v-if="event.qualifiers !== null" class="text-muted-foreground"> (Qualifiers {{ event.qualifiers }})</span></td></tr>
+                <tr><th>Channel</th><td>{{ event.channel }}</td></tr>
+                <tr><th>Computer</th><td>{{ event.computer }}</td></tr>
+                <tr><th>Level / Task / Opcode</th><td>{{ event.level }} / {{ event.task ?? '-' }} / {{ event.opcode ?? '-' }}</td></tr>
+                <tr><th>Keywords</th><td class="font-mono">{{ event.keywords }}</td></tr>
+                <tr v-if="event.userSid"><th>User SID</th><td class="font-mono">{{ event.userSid }}<span v-if="sidName" class="text-muted-foreground"> ({{ sidName }})</span></td></tr>
+                <tr v-if="event.pid !== null"><th>Process / Thread ID</th><td class="tabular-nums">{{ event.pid }} / {{ event.tid }}</td></tr>
+                <tr v-if="event.activityId"><th>Activity ID</th><td class="font-mono">{{ event.activityId }}</td></tr>
+                <tr><th>EventRecordID</th><td class="tabular-nums">{{ event.recordId }}</td></tr>
+                <tr><th>Source file</th><td>{{ source?.name }} <span class="text-muted-foreground">(record {{ event.seq }}, chunk {{ event.chunk }})</span></td></tr>
+              </tbody>
+            </table>
 
-      <div class="body px-3 py-2">
-        <template v-if="tab === 'general'">
-          <template v-if="extra">
-            <h3 class="h6">{{ extra.title }}</h3>
-            <pre class="raw extra">{{ extra.text }}</pre>
+            <h3 class="mb-1.5 text-xs font-semibold">{{ event.payload || 'Event data' }}</h3>
+            <table v-if="dataRows.length" class="w-full text-xs">
+              <tbody class="[&_th]:text-muted-foreground [&_td]:py-0.5 [&_th]:w-48 [&_th]:py-0.5 [&_th]:pr-3 [&_th]:text-left [&_th]:align-top [&_th]:font-medium">
+                <tr v-for="[key, value] in dataRows" :key="key" class="border-t">
+                  <th class="break-all">{{ key }}</th>
+                  <td class="font-mono break-all whitespace-pre-wrap">{{ value }}</td>
+                </tr>
+              </tbody>
+            </table>
+            <p v-else class="text-muted-foreground text-xs">No event data.</p>
+
+            <template v-if="event.message">
+              <h3 class="mt-3 mb-1.5 text-xs font-semibold">Rendered message (from the forwarding host)</h3>
+              <pre class="bg-muted/50 rounded-md border p-2.5 font-mono text-[11px] break-all whitespace-pre-wrap">{{ event.message }}</pre>
+            </template>
           </template>
-          <table class="table table-sm kv mb-3">
-            <tbody>
-              <tr><th>Time ({{ zone }})</th><td class="tabular">{{ formatTime(event.ts, zone) }}</td></tr>
-              <tr><th>SystemTime (UTC)</th><td class="font-monospace">{{ event.time }}</td></tr>
-              <tr><th>Provider</th><td>{{ event.provider }}</td></tr>
-              <tr><th>Event ID</th><td>{{ event.eventId }}<span v-if="event.qualifiers !== null" class="text-body-secondary"> (Qualifiers {{ event.qualifiers }})</span></td></tr>
-              <tr><th>Channel</th><td>{{ event.channel }}</td></tr>
-              <tr><th>Computer</th><td>{{ event.computer }}</td></tr>
-              <tr><th>Level / Task / Opcode</th><td>{{ event.level }} / {{ event.task ?? '-' }} / {{ event.opcode ?? '-' }}</td></tr>
-              <tr><th>Keywords</th><td class="font-monospace">{{ event.keywords }}</td></tr>
-              <tr v-if="event.userSid"><th>User SID</th><td class="font-monospace">{{ event.userSid }}<span v-if="sidName" class="text-body-secondary"> ({{ sidName }})</span></td></tr>
-              <tr v-if="event.pid !== null"><th>Process / Thread ID</th><td class="tabular">{{ event.pid }} / {{ event.tid }}</td></tr>
-              <tr v-if="event.activityId"><th>Activity ID</th><td class="font-monospace">{{ event.activityId }}</td></tr>
-              <tr><th>EventRecordID</th><td class="tabular">{{ event.recordId }}</td></tr>
-              <tr><th>Source file</th><td>{{ source?.name }} <span class="text-body-secondary">(record {{ event.seq }}, chunk {{ event.chunk }})</span></td></tr>
-            </tbody>
-          </table>
 
-          <h3 class="h6">{{ event.payload || 'Event data' }}</h3>
-          <table v-if="dataRows.length" class="table table-sm kv mb-2">
-            <tbody>
-              <tr v-for="[key, value] in dataRows" :key="key">
-                <th>{{ key }}</th>
-                <td class="font-monospace value">{{ value }}</td>
-              </tr>
-            </tbody>
-          </table>
-          <p v-else class="text-body-secondary small">No event data.</p>
-
-          <template v-if="event.message">
-            <h3 class="h6 mt-3">Rendered message (from the forwarding host)</h3>
-            <pre class="raw">{{ event.message }}</pre>
+          <template v-else-if="tab === 'xml'">
+            <p v-if="xmlState === 'loading'" class="text-muted-foreground text-xs">Rendering from the source file…</p>
+            <p v-else-if="xmlState === 'failed'" class="text-danger text-xs">The record could not be re-read from the source file.</p>
+            <pre v-else class="bg-muted/50 rounded-md border p-2.5 font-mono text-[11px] break-all whitespace-pre-wrap">{{ xml }}</pre>
           </template>
-        </template>
 
-        <template v-else-if="tab === 'xml'">
-          <p v-if="xmlState === 'loading'" class="text-body-secondary small">Rendering from the source file…</p>
-          <p v-else-if="xmlState === 'failed'" class="text-danger small">The record could not be re-read from the source file.</p>
-          <pre v-else class="raw">{{ xml }}</pre>
-        </template>
+          <pre v-else class="bg-muted/50 rounded-md border p-2.5 font-mono text-[11px] break-all whitespace-pre-wrap">{{ json }}</pre>
+        </div>
+      </Tabs>
 
-        <pre v-else class="raw">{{ json }}</pre>
-      </div>
-
-      <footer class="d-flex gap-2 px-3 py-2 border-top">
-        <button class="btn btn-sm btn-outline-secondary" @click="copy">
-          <i class="bi bi-clipboard"></i> {{ copied ? 'Copied' : `Copy ${copyTarget}` }}
-        </button>
-        <button class="btn btn-sm btn-secondary ms-auto" @click="$emit('close')">Close</button>
-      </footer>
-    </div>
-  </div>
+      <DialogFooter class="border-t px-4 py-2.5">
+        <Button variant="outline" @click="copy"><CheckIcon v-if="copied" /><CopyIcon v-else />{{ copied ? 'Copied' : `Copy ${copyTarget}` }}</Button>
+        <DialogClose as-child><Button variant="secondary">Close</Button></DialogClose>
+      </DialogFooter>
+    </DialogContent>
+  </Dialog>
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref } from 'vue';
+import { computed, ref } from 'vue';
+import { CheckIcon, CopyIcon } from '@lucide/vue';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import type { EvtxEvent } from '@/core/evtx/types';
 import type { RowDetail } from '@/core/plugin';
 import { levelName } from '@/core/evtx/types';
@@ -101,19 +93,19 @@ const tabs = [
   { id: 'xml', label: 'XML' },
   { id: 'json', label: 'JSON' },
 ] as const;
-const tab = ref<(typeof tabs)[number]['id']>('general');
-const dialog = ref<HTMLElement | null>(null);
+type TabId = (typeof tabs)[number]['id'];
+const tab = ref<TabId>('general');
 const copied = ref(false);
 const xml = ref('');
 const xmlState = ref<'idle' | 'loading' | 'ready' | 'failed'>('idle');
 
 const source = computed(() => eventStore.sources.find(s => s.index === props.event.src));
 const sidName = computed(() => createContext(eventStore).sidName(props.event.userSid));
-const levelClass = computed(() => {
+const level = computed(() => {
   const l = props.event.level;
-  if (l === 1 || l === 2) return 'text-bg-danger';
-  if (l === 3) return 'text-bg-warning';
-  return 'text-bg-secondary';
+  if (l === 1 || l === 2) return { variant: 'destructive' as const, class: '' };
+  if (l === 3) return { variant: 'outline' as const, class: 'border-warning/50 text-warning' };
+  return { variant: 'secondary' as const, class: '' };
 });
 const dataRows = computed(() => [
   ...Object.entries(props.event.data),
@@ -124,7 +116,7 @@ const json = computed(() => {
   return JSON.stringify({ ...rest, sourceFile: source.value?.name }, null, 2);
 });
 
-async function select(id: (typeof tabs)[number]['id']) {
+async function select(id: TabId) {
   tab.value = id;
   if (id === 'xml' && xmlState.value === 'idle') {
     xmlState.value = 'loading';
@@ -142,56 +134,4 @@ async function copy() {
   setTimeout(() => (copied.value = false), 1500);
 }
 
-onMounted(() => nextTick(() => dialog.value?.focus()));
 </script>
-
-<style scoped>
-.overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.45);
-  z-index: 1050;
-  display: flex;
-  align-items: flex-start;
-  justify-content: center;
-  padding: 32px 16px;
-}
-.dialog {
-  background: var(--bs-body-bg);
-  width: min(960px, 100%);
-  max-height: calc(100vh - 64px);
-  display: flex;
-  flex-direction: column;
-  outline: none;
-}
-.body {
-  overflow: auto;
-  flex: 1;
-}
-.kv th {
-  width: 200px;
-  color: var(--bs-secondary-color);
-  font-weight: 500;
-  white-space: nowrap;
-}
-.kv td.value {
-  white-space: pre-wrap;
-  word-break: break-all;
-}
-.raw {
-  background: var(--bs-tertiary-bg);
-  border: 1px solid var(--bs-border-color);
-  border-radius: 6px;
-  padding: 10px;
-  font-size: 12px;
-  white-space: pre-wrap;
-  word-break: break-all;
-}
-.tabular {
-  font-variant-numeric: tabular-nums;
-}
-.extra {
-  max-height: 45vh;
-  overflow: auto;
-}
-</style>

@@ -56,7 +56,7 @@ export const update: Plugin = {
   name: 'update',
   label: 'Windows Update',
   category: 'System',
-  icon: 'arrow-repeat',
+  icon: 'refresh-cw',
   description: 'Windows Update client downloads, installs and failures from the System log, with the KB number taken from the update title.',
   sources: SOURCES,
   analyze(ctx) {

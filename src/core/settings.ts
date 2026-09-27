@@ -2,10 +2,10 @@ import type { Category } from './plugin';
 
 /** Sidebar grouping; plugins list their own category. */
 export const CATEGORIES: { id: Exclude<Category, 'All'>; label: string; icon: string }[] = [
-  { id: 'System', label: 'System', icon: 'pc-display' },
-  { id: 'Account', label: 'Account', icon: 'people' },
-  { id: 'Application', label: 'Application', icon: 'window-stack' },
-  { id: 'Hardware', label: 'Hardware', icon: 'usb-drive' },
+  { id: 'System', label: 'System', icon: 'monitor-cog' },
+  { id: 'Account', label: 'Account', icon: 'users' },
+  { id: 'Application', label: 'Application', icon: 'app-window' },
+  { id: 'Hardware', label: 'Hardware', icon: 'cpu' },
 ];
 
 /** Channels analysts usually need; the overview flags the ones missing from the loaded data. */

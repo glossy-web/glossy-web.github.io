@@ -135,7 +135,7 @@ export const powershell: Plugin = {
   name: 'powershell',
   label: 'PowerShell',
   category: 'Application',
-  icon: 'terminal-split',
+  icon: 'square-terminal',
   description:
     'Script blocks (4104) reassembled from their parts, module logging (4103), and the classic Windows PowerShell log (400/403/600/800) with decoded -EncodedCommand arguments and PowerShell 2.0 downgrades. Indicators are leads for review, not detections.',
   sources: SOURCES,

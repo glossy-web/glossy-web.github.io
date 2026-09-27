@@ -1,77 +1,81 @@
 <template>
-  <div class="plugin-view d-flex flex-column flex-grow-1 p-3 gap-3">
-    <header>
-      <h1 class="h5 mb-1"><i :class="`bi bi-${plugin.icon} me-2`" aria-hidden="true"></i>{{ plugin.label }}</h1>
-      <p class="text-body-secondary small mb-2">{{ plugin.description }}</p>
+  <div class="flex min-h-0 flex-1 flex-col gap-3 overflow-auto p-3 *:shrink-0">
+    <header class="space-y-1.5">
+      <h1 class="flex items-center gap-2 text-base font-semibold"><component :is="icon(plugin.icon)" class="size-4" aria-hidden="true" />{{ plugin.label }}</h1>
+      <p class="text-muted-foreground text-xs">{{ plugin.description }}</p>
       <FilterBar :plugin="plugin" :values="options" @update="setOption" />
     </header>
 
-    <div v-for="(n, i) in result.notes" :key="i" class="alert py-2 mb-0 small" :class="n.tone === 'warning' ? 'alert-warning' : 'alert-secondary'">
-      <i :class="n.tone === 'warning' ? 'bi bi-exclamation-triangle me-1' : 'bi bi-info-circle me-1'" aria-hidden="true"></i>{{ n.text }}
-    </div>
+    <Alert v-for="(n, i) in result.notes" :key="i" :class="n.tone === 'warning' ? 'border-warning/40' : ''">
+      <TriangleAlertIcon v-if="n.tone === 'warning'" class="text-warning!" />
+      <InfoIcon v-else />
+      <AlertDescription :class="n.tone === 'warning' ? 'text-warning' : ''">{{ n.text }}</AlertDescription>
+    </Alert>
 
     <DashboardPanel :stats="result.stats" />
 
-    <div v-if="charts.length" class="charts">
-      <SummaryChart v-for="c in charts" :key="c.title" :spec="c" :zone="zone" />
+    <div v-if="charts.length" class="grid grid-cols-[repeat(auto-fit,minmax(420px,1fr))] gap-3">
+      <SummaryChart v-for="c in charts" :key="c.title" :spec="c" :zone="timeZone" />
     </div>
 
-    <section class="d-flex flex-column flex-grow-1 views">
-      <ul v-if="result.views.length > 1" class="nav nav-tabs mb-2" role="tablist">
-        <li v-for="v in result.views" :key="v.id" class="nav-item" role="presentation">
-          <button
-            type="button"
-            role="tab"
-            class="nav-link"
-            :class="{ active: currentView?.id === v.id }"
-            :aria-selected="currentView?.id === v.id"
-            @click="showView(v.id)"
-          >
-            {{ v.label }} <span class="badge text-bg-light border ms-1">{{ v.rows.length.toLocaleString() }}</span>
-          </button>
-        </li>
-      </ul>
+    <section class="flex min-h-[420px] flex-1 flex-col">
+      <Tabs v-if="result.views.length > 1" :model-value="currentView?.id" class="mb-1.5" @update:model-value="id => showView(String(id))">
+        <TabsList variant="line">
+          <TabsTrigger v-for="v in result.views" :key="v.id" :value="v.id" class="flex-none">
+            {{ v.label }}<Badge variant="secondary" class="h-4 px-1 tabular-nums">{{ v.rows.length.toLocaleString() }}</Badge>
+          </TabsTrigger>
+        </TabsList>
+      </Tabs>
       <EventTable
         v-if="currentView"
-        :key="`${plugin.name}:${currentView.id}:${revision}:${JSON.stringify(preset)}`"
+        :key="`${plugin.name}:${currentView.id}:${revision}:${JSON.stringify(filters)}`"
         :view="currentView"
-        :zone="zone"
+        :zone="timeZone"
         :export-name="`${plugin.name}_${currentView.id}`"
-        :filters="preset"
+        :filters="filters"
         @open="(event, extra) => (detail = { event, extra })"
         @pivot="target => showView(target.view, target.filters)"
       />
     </section>
 
-    <EventDetailModal v-if="detail" :event="detail.event" :extra="detail.extra" :zone="zone" @close="detail = null" />
+    <EventDetailModal v-if="detail" :event="detail.event" :extra="detail.extra" :zone="timeZone" @close="detail = null" />
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, ref, shallowRef } from 'vue';
+import { computed, shallowRef } from 'vue';
+import { useRouter } from 'vue-router';
+import { InfoIcon, TriangleAlertIcon } from '@lucide/vue';
 import type { EvtxEvent } from '@/core/evtx/types';
 import type { RowDetail } from '@/core/plugin';
 import { eventStore } from '@/core/store';
 import { createContext } from '@/core/context';
 import { pluginByName } from '@/plugins';
-import { pluginOptions } from '@/composables/useGlossyStore';
+import { pluginOptions, timeZone } from '@/composables/useGlossyStore';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Badge } from '@/components/ui/badge';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { icon } from '@/components/icons';
 import FilterBar from './FilterBar.vue';
 import DashboardPanel from './DashboardPanel.vue';
 import SummaryChart from './SummaryChart.vue';
 import EventTable from './EventTable.vue';
 import EventDetailModal from './EventDetailModal.vue';
 
-const props = defineProps<{ name: string; zone: string }>();
+/** Route params: the module and, optionally, one of its views (#/m/logon/sessions). */
+const props = defineProps<{ name: string; view?: string }>();
+const router = useRouter();
 
 const plugin = computed(() => pluginByName.get(props.name) ?? pluginByName.get('showAll')!);
 const detail = shallowRef<{ event: EvtxEvent; extra: RowDetail | undefined } | null>(null);
-const viewId = ref('');
-/** Column filters handed to the table when a pivot opened the view. */
-const preset = shallowRef<Record<string, string>>();
+/** Column filters a pivot hands to the view it opens (kept per view, so going back drops them). */
+const preset = shallowRef<{ view: string; filters: Record<string, string> }>();
 
 function showView(id: string, filters?: Record<string, string>) {
-  viewId.value = id;
-  preset.value = filters;
+  preset.value = filters ? { view: id, filters } : undefined;
+  const to = { name: 'module', params: { name: plugin.value.name, view: id } };
+  // A pivot is a step the analyst may want to go back from; switching tabs is not.
+  void (filters ? router.push(to) : router.replace(to));
 }
 
 const options = computed<Record<string, boolean>>(() => {
@@ -96,20 +100,6 @@ const charts = computed(() =>
   result.value.charts.filter(c => (c.kind === 'ranking' ? c.items.length > 0 : c.series.some(s => s.ts.length > 0))),
 );
 const revision = computed(() => `${eventStore.version.value}:${JSON.stringify(options.value)}`);
-const currentView = computed(() => result.value.views.find(v => v.id === viewId.value) ?? result.value.views[0]);
+const currentView = computed(() => result.value.views.find(v => v.id === props.view) ?? result.value.views[0]);
+const filters = computed(() => (preset.value && preset.value.view === currentView.value?.id ? preset.value.filters : undefined));
 </script>
-
-<style scoped>
-.plugin-view {
-  min-height: 0;
-  overflow: auto;
-}
-.charts {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(420px, 1fr));
-  gap: 12px;
-}
-.views {
-  min-height: 420px;
-}
-</style>

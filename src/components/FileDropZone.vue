@@ -1,14 +1,15 @@
 <template>
-  <div v-if="dragging" class="drop-overlay d-flex align-items-center justify-content-center" aria-hidden="true">
-    <div class="box rounded-3 p-5 text-center">
-      <i class="bi bi-cloud-arrow-up display-4 d-block mb-2"></i>
-      <div class="h5 mb-0">Drop .evtx files or folders to add them</div>
+  <div v-if="dragging" class="bg-primary/10 pointer-events-none fixed inset-0 z-[100] flex items-center justify-center" aria-hidden="true">
+    <div class="bg-background border-primary rounded-xl border-2 border-dashed p-10 text-center">
+      <CloudUploadIcon class="text-primary mx-auto mb-2 size-10" />
+      <div class="text-base font-medium">Drop .evtx files or folders to add them</div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref } from 'vue';
+import { CloudUploadIcon } from '@lucide/vue';
 
 const emit = defineEmits<{ files: [files: File[]] }>();
 const dragging = ref(false);
@@ -73,17 +74,3 @@ onBeforeUnmount(() => {
   window.removeEventListener('drop', onDrop);
 });
 </script>
-
-<style scoped>
-.drop-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 2000;
-  background: rgba(13, 110, 253, 0.12);
-  pointer-events: none;
-}
-.box {
-  background: var(--bs-body-bg);
-  border: 2px dashed var(--bs-primary);
-}
-</style>

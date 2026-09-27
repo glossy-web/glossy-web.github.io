@@ -10,7 +10,7 @@ export interface Column<R> {
   value: (row: R) => string | number;
   /** Cell text when it differs from the value (never used for kind 'time'). */
   text?: (row: R) => string;
-  kind?: 'time' | 'number' | 'mono' | 'wrap';
+  kind?: 'time' | 'number' | 'mono';
   /** Initial width in px. */
   size?: number;
   /** Offer a pick-list of the column's distinct values as its filter. */
@@ -122,7 +122,7 @@ export interface Plugin {
   name: string;
   label: string;
   category: Category;
-  /** Bootstrap Icons name without the "bi-" prefix. */
+  /** lucide icon name (kebab-case), resolved by the UI. */
   icon: string;
   description: string;
   sources: SourceSpec[];
