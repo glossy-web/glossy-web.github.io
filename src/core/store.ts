@@ -1,161 +1,238 @@
-import type { EvtxEvent, EventFilter } from './evtx/types';
-import { ref } from 'vue';
+import { shallowRef } from 'vue';
+import type { EvtxEvent, ParseReport, ParsedEvent, RecordIdGap, SourceFile } from './evtx/types';
 
-export interface EventSource {
-  id: string;
-  name: string;
-  eventCount: number;
-  errors: string[];
+/**
+ * Selects events of one provider by event ID. Channels are not part of the match:
+ * forwarded and archived logs keep the original System/Channel, and a provider's
+ * event IDs mean the same thing in every channel it writes to.
+ */
+export interface Selector {
+  provider: string;
+  ids: number[];
 }
 
-class EventStore {
-  private events: Map<number, EvtxEvent> = new Map();
-  private sources: Map<string, EventSource> = new Map();
-  private eventList: EvtxEvent[] = [];
-  private nextId = 0;
-  version = ref(0);
+const keyOf = (provider: string, eventId: number) => `${provider.toLowerCase()}\u0001${eventId}`;
+const byTime = (a: EvtxEvent, b: EvtxEvent) => a.ts - b.ts || a.src - b.src || a.recordId - b.recordId;
 
-  private bump() { this.version.value++; }
+/** Collects one file's events while it is being parsed. */
+export class SourceBuilder {
+  private recordIds: number[] = [];
+  private times: number[] = [];
+  private computers = new Set<string>();
+  private channels = new Set<string>();
+  private first = Infinity;
+  private last = -Infinity;
+  added = 0;
+  duplicates = 0;
 
-  addSource(name: string, parsed: { events: EvtxEvent[]; errors: string[] }): string {
-    const id = `src_${this.sources.size}`;
-    const source: EventSource = {
-      id,
-      name,
-      eventCount: parsed.events.length,
-      errors: parsed.errors,
-    };
+  constructor(
+    private store: EventStore,
+    readonly index: number,
+    readonly meta: { name: string; size: number; sha256: string; file: File },
+  ) {}
 
-    for (const event of parsed.events) {
-      event.id = this.nextId++;
-      this.events.set(event.id, event);
-      this.eventList.push(event);
+  add(events: ParsedEvent[]): void {
+    for (const parsed of events) {
+      this.recordIds.push(parsed.seq);
+      this.times.push(parsed.ts);
+      this.computers.add(parsed.computer);
+      this.channels.add(parsed.channel);
+      if (parsed.ts < this.first) this.first = parsed.ts;
+      if (parsed.ts > this.last) this.last = parsed.ts;
+      if (this.store.isDuplicate(parsed)) {
+        this.duplicates++;
+        continue;
+      }
+      this.store.push(parsed, this.index);
+      this.added++;
     }
-
-    this.sources.set(id, source);
-    this.bump();
-    return id;
   }
 
-  removeSource(id: string): void {
-    const source = this.sources.get(id);
-    if (!source) return;
+  finish(report: ParseReport): SourceFile {
+    const { gaps, missing, min, max } = this.recordIdGaps();
+    const source: SourceFile = {
+      index: this.index,
+      ...this.meta,
+      report,
+      added: this.added,
+      duplicates: this.duplicates,
+      computers: [...this.computers].filter(Boolean).sort(),
+      channels: [...this.channels].filter(Boolean).sort(),
+      firstTs: Number.isFinite(this.first) ? this.first : null,
+      lastTs: Number.isFinite(this.last) ? this.last : null,
+      minSeq: min,
+      maxSeq: max,
+      gaps,
+      missingRecords: missing,
+      timeReversals: this.timeReversals(),
+    };
+    this.store.finishSource(source);
+    return source;
+  }
 
-    const toRemove = new Set<number>();
-    for (const event of this.eventList) {
-      if (event.sourceFile === source.name) {
-        toRemove.add(event.id);
+  /**
+   * Record numbers are one sequence per log file, so holes between the lowest and
+   * highest number point at records that were removed or lost.
+   */
+  private recordIdGaps(): { gaps: RecordIdGap[]; missing: number; min: number | null; max: number | null } {
+    if (this.recordIds.length === 0) return { gaps: [], missing: 0, min: null, max: null };
+    const ids = [...new Set(this.recordIds)].sort((a, b) => a - b);
+    const min = ids[0]!;
+    const max = ids[ids.length - 1]!;
+    const gaps: RecordIdGap[] = [];
+    let missing = 0;
+    for (let i = 1; i < ids.length; i++) {
+      const prev = ids[i - 1]!;
+      const cur = ids[i]!;
+      if (cur - prev > 1) {
+        gaps.push({ from: prev + 1, to: cur - 1 });
+        missing += cur - prev - 1;
       }
     }
-
-    for (const eventId of toRemove) {
-      this.events.delete(eventId);
-    }
-    this.eventList = this.eventList.filter(e => !toRemove.has(e.id));
-    this.sources.delete(id);
-    this.bump();
+    return { gaps, missing, min, max };
   }
 
-  reset(): void {
-    this.events.clear();
-    this.sources.clear();
-    this.eventList = [];
-    this.nextId = 0;
-    this.bump();
+  private timeReversals(): number {
+    const order = this.recordIds.map((id, i) => [id, this.times[i]!] as const).sort((a, b) => a[0] - b[0]);
+    let count = 0;
+    for (let i = 1; i < order.length; i++) if (order[i]![1] < order[i - 1]![1] - 1000) count++;
+    return count;
+  }
+}
+
+export class EventStore {
+  /** Bumped whenever sources or events change; read it inside computed() to react. */
+  readonly version = shallowRef(0);
+  private sourceList: SourceFile[] = [];
+  private eventList: EvtxEvent[] = [];
+  private index = new Map<string, EvtxEvent[]>();
+  private channelCounts = new Map<string, number>();
+  /** computer+channel -> EventRecordID -> TimeCreated, to drop records seen in another file. */
+  private seen = new Map<string, Map<number, string>>();
+  private hashes = new Set<string>();
+  private nextSource = 0;
+  private cache = new Map<string, EvtxEvent[]>();
+  private cacheVersion = -1;
+
+  get sources(): readonly SourceFile[] {
+    return this.sourceList;
   }
 
-  getEvent(id: number): EvtxEvent | undefined {
-    return this.events.get(id);
-  }
-
-  getEvents(ids: number[]): EvtxEvent[] {
-    return ids.map(id => this.events.get(id)).filter(Boolean) as EvtxEvent[];
-  }
-
-  getAllEvents(): EvtxEvent[] {
+  get events(): readonly EvtxEvent[] {
     return this.eventList;
   }
 
-  query(filter: EventFilter = {}): EvtxEvent[] {
-    let results = this.eventList;
-
-    if (filter.providers && filter.providers.length > 0) {
-      const pSet = new Set(filter.providers);
-      results = results.filter(e => pSet.has(e.provider));
-    }
-    if (filter.eventIds && filter.eventIds.length > 0) {
-      const eidSet = new Set(filter.eventIds);
-      results = results.filter(e => eidSet.has(e.eventId));
-    }
-    if (filter.channels && filter.channels.length > 0) {
-      const chSet = new Set(filter.channels);
-      results = results.filter(e => chSet.has(e.channel));
-    }
-    if (filter.computers && filter.computers.length > 0) {
-      const compSet = new Set(filter.computers);
-      results = results.filter(e => compSet.has(e.computer));
-    }
-    if (filter.levelMin != null) {
-      results = results.filter(e => e.level >= filter.levelMin!);
-    }
-    if (filter.levelMax != null) {
-      results = results.filter(e => e.level <= filter.levelMax!);
-    }
-    if (filter.since) {
-      results = results.filter(e => e.timestamp >= filter.since!);
-    }
-    if (filter.until) {
-      results = results.filter(e => e.timestamp <= filter.until!);
-    }
-    if (filter.textSearch) {
-      const q = filter.textSearch.toLowerCase();
-      results = results.filter(e =>
-        JSON.stringify(e.data).toLowerCase().includes(q) ||
-        e.provider.toLowerCase().includes(q) ||
-        e.channel.toLowerCase().includes(q) ||
-        e.computer.toLowerCase().includes(q),
-      );
-    }
-
-    return results;
+  get size(): number {
+    return this.eventList.length;
   }
 
-  getStatistics() {
-    const providerMap = new Map<string, number>();
-    const eventIdMap = new Map<number, number>();
-    const computerMap = new Map<string, number>();
-    const channelMap = new Map<string, number>();
-    let earliest: Date | null = null;
-    let latest: Date | null = null;
-
-    for (const event of this.eventList) {
-      providerMap.set(event.provider, (providerMap.get(event.provider) || 0) + 1);
-      eventIdMap.set(event.eventId, (eventIdMap.get(event.eventId) || 0) + 1);
-      computerMap.set(event.computer, (computerMap.get(event.computer) || 0) + 1);
-      channelMap.set(event.channel, (channelMap.get(event.channel) || 0) + 1);
-
-      if (!earliest || event.timestamp < earliest) earliest = event.timestamp;
-      if (!latest || event.timestamp > latest) latest = event.timestamp;
-    }
-
-    const sortDesc = <T>(map: Map<T, number>) =>
-      Array.from(map.entries())
-        .sort((a, b) => b[1] - a[1])
-        .map(([key, count]) => ({ name: String(key), count }));
-
-    return {
-      totalEvents: this.eventList.length,
-      sourceCount: this.sources.size,
-      providers: sortDesc(providerMap),
-      eventIds: sortDesc(eventIdMap).map(e => ({ id: Number(e.name), count: e.count })),
-      computers: sortDesc(computerMap),
-      channels: sortDesc(channelMap),
-      timeRange: { earliest, latest },
-    };
+  hasFile(sha256: string): boolean {
+    return this.hashes.has(sha256);
   }
 
-  getSources(): EventSource[] {
-    return Array.from(this.sources.values());
+  beginSource(meta: { name: string; size: number; sha256: string; file: File }): SourceBuilder {
+    this.hashes.add(meta.sha256);
+    return new SourceBuilder(this, this.nextSource++, meta);
+  }
+
+  /** Aborts a source whose parse failed before anything was added. */
+  discardSource(sha256: string): void {
+    this.hashes.delete(sha256);
+  }
+
+  isDuplicate(e: ParsedEvent): boolean {
+    const key = `${e.computer}\u0001${e.channel}`;
+    let ids = this.seen.get(key);
+    if (!ids) this.seen.set(key, (ids = new Map()));
+    const time = ids.get(e.recordId);
+    if (time === undefined) {
+      ids.set(e.recordId, e.time);
+      return false;
+    }
+    return time === e.time;
+  }
+
+  push(parsed: ParsedEvent, src: number): void {
+    const event = parsed as EvtxEvent;
+    event.id = this.eventList.length;
+    event.src = src;
+    this.eventList.push(event);
+    const key = keyOf(event.provider, event.eventId);
+    let bucket = this.index.get(key);
+    if (!bucket) this.index.set(key, (bucket = []));
+    bucket.push(event);
+    this.channelCounts.set(event.channel, (this.channelCounts.get(event.channel) ?? 0) + 1);
+  }
+
+  finishSource(source: SourceFile): void {
+    this.sourceList.push(source);
+    this.sourceList.sort((a, b) => a.index - b.index);
+    this.touch();
+  }
+
+  touch(): void {
+    this.version.value++;
+  }
+
+  reset(): void {
+    this.sourceList = [];
+    this.eventList = [];
+    this.index.clear();
+    this.channelCounts.clear();
+    this.seen.clear();
+    this.hashes.clear();
+    this.cache.clear();
+    this.nextSource = 0;
+    this.touch();
+  }
+
+  channelCount(channel: string): number {
+    return this.channelCounts.get(channel) ?? 0;
+  }
+
+  channels(): { channel: string; count: number }[] {
+    return [...this.channelCounts].map(([channel, count]) => ({ channel, count })).sort((a, b) => b.count - a.count);
+  }
+
+  /** Events matching any selector, sorted by time. Results are cached per store version. */
+  select(selectors: readonly Selector[]): EvtxEvent[] {
+    if (this.cacheVersion !== this.version.value) {
+      this.cache.clear();
+      this.cacheVersion = this.version.value;
+    }
+    const cacheKey = JSON.stringify(selectors.map(s => [s.provider.toLowerCase(), s.ids]));
+    const hit = this.cache.get(cacheKey);
+    if (hit) return hit;
+    const out: EvtxEvent[] = [];
+    for (const s of selectors) {
+      for (const id of s.ids) {
+        for (const e of this.index.get(keyOf(s.provider, id)) ?? []) out.push(e);
+      }
+    }
+    out.sort(byTime);
+    this.cache.set(cacheKey, out);
+    return out;
+  }
+
+  /** Every event sorted by time (cached). */
+  all(): EvtxEvent[] {
+    if (this.cacheVersion !== this.version.value) {
+      this.cache.clear();
+      this.cacheVersion = this.version.value;
+    }
+    let hit = this.cache.get('*');
+    if (!hit) this.cache.set('*', (hit = [...this.eventList].sort(byTime)));
+    return hit;
+  }
+
+  count(selectors: readonly Selector[]): number {
+    let n = 0;
+    for (const s of selectors) {
+      for (const id of s.ids) {
+        n += this.index.get(keyOf(s.provider, id))?.length ?? 0;
+      }
+    }
+    return n;
   }
 }
 

@@ -1,121 +1,120 @@
-import type { EvtxEvent, EventFilter } from './evtx/types';
-import { eventStore } from './store';
+import type { EvtxEvent, SourceFile } from './evtx/types';
+import type { Selector } from './store';
 
-export interface ChartConfig {
-  type: 'bar' | 'line' | 'pie' | 'scatter';
-  title: string;
-  data: Record<string, unknown>[];
-  xKey: string;
-  yKey: string;
-  categoryKey?: string;
-}
+export type Tone = 'danger' | 'warning' | 'success' | 'muted';
 
-export interface DashboardData {
-  summary: {
-    title: string;
-    value: number | string;
-    unit?: string;
-  }[];
-  charts: ChartConfig[];
-}
-
-export interface TableColumn {
-  key: string;
+export interface Column<R> {
+  id: string;
   label: string;
-  render?: (event: EvtxEvent) => string;
-  sortable?: boolean;
-  visible?: boolean;
-  width?: string;
+  /** Value used for sorting, filtering and export. `kind: 'time'` expects epoch ms. */
+  value: (row: R) => string | number;
+  /** Cell text when it differs from the value (never used for kind 'time'). */
+  text?: (row: R) => string;
+  kind?: 'time' | 'number' | 'mono' | 'wrap';
+  /** Initial width in px. */
+  size?: number;
+  /** Offer a pick-list of the column's distinct values as its filter. */
+  facet?: boolean;
+  hidden?: boolean;
+  tone?: (row: R) => Tone | undefined;
 }
 
-export interface FilterDef {
-  key: string;
+export interface View<R = unknown> {
+  id: string;
   label: string;
-  type: 'select' | 'text';
-  options?: string[];
-  width?: string;
+  rows: R[];
+  columns: Column<R>[];
+  /** The event opened when a row is clicked. */
+  event?: (row: R) => EvtxEvent | undefined;
+  sort?: { id: string; desc?: boolean };
 }
+
+export interface Stat {
+  label: string;
+  value: number | string;
+  tone?: Tone;
+}
+
+export interface Series {
+  name: string;
+  ts: number[];
+}
+
+export type ChartSpec =
+  /** Events per day, stacked by series. */
+  | { kind: 'timeline'; title: string; series: Series[] }
+  /** Each event as a dot at (date, time of day) — spots off-hours activity. */
+  | { kind: 'clock'; title: string; series: Series[] }
+  /** Top items by count, as horizontal bars. */
+  | { kind: 'ranking'; title: string; items: { name: string; value: number }[] };
+
+export interface Note {
+  tone: 'info' | 'warning';
+  text: string;
+}
+
+export interface AnalysisResult {
+  stats: Stat[];
+  charts: ChartSpec[];
+  views: View<any>[];
+  notes: Note[];
+}
+
+/** A log channel a plugin reads, shown with its presence in the loaded data. */
+export interface SourceSpec extends Selector {
+  channel: string;
+  /** The channel is disabled or tiny by default, so absence is not evidence of absence. */
+  offByDefault?: boolean;
+}
+
+export interface PluginOption {
+  id: string;
+  label: string;
+  default: boolean;
+}
+
+export interface PluginContext {
+  select(selectors: readonly Selector[]): EvtxEvent[];
+  /** Every loaded event, sorted by time. */
+  all(): EvtxEvent[];
+  /** Account name for a SID, learned from Security events and well-known SIDs ('' if unknown). */
+  sidName(sid: string): string;
+  source(e: EvtxEvent): SourceFile | undefined;
+  /** Every loaded source file. */
+  files(): readonly SourceFile[];
+}
+
+export type Category = 'System' | 'Account' | 'Application' | 'Hardware' | 'All';
 
 export interface Plugin {
   name: string;
-  category: string;
   label: string;
-  description: string;
+  category: Category;
+  /** Bootstrap Icons name without the "bi-" prefix. */
   icon: string;
-  providers: string[];
-  eventIds: number[];
-
-  getFilters(baseFilter?: EventFilter): EventFilter;
-  getFilterDefs(events: EvtxEvent[]): FilterDef[];
-  getTableColumns(): TableColumn[];
-  processEvents(events: EvtxEvent[]): EvtxEvent[];
-  getDashboardData(events: EvtxEvent[]): DashboardData;
-  getChartData(events: EvtxEvent[]): ChartConfig[];
-  getExportData(events: EvtxEvent[]): Record<string, unknown>[];
+  description: string;
+  sources: SourceSpec[];
+  options?: PluginOption[];
+  analyze(ctx: PluginContext, options: Record<string, boolean>): AnalysisResult;
 }
 
-export abstract class PluginBase implements Plugin {
-  abstract name: string;
-  abstract category: string;
-  abstract label: string;
-  abstract description: string;
-  abstract icon: string;
-  abstract providers: string[];
-  abstract eventIds: number[];
-
-  getFilters(baseFilter?: EventFilter): EventFilter {
-    return {
-      ...baseFilter,
-      providers: this.providers.length > 0 ? this.providers : undefined,
-      eventIds: this.eventIds.length > 0 ? this.eventIds : undefined,
-    };
-  }
-
-  getFilterDefs(_events: EvtxEvent[]): FilterDef[] {
-    return [];
-  }
-
-  abstract getTableColumns(): TableColumn[];
-  abstract processEvents(events: EvtxEvent[]): EvtxEvent[];
-  abstract getDashboardData(events: EvtxEvent[]): DashboardData;
-  abstract getChartData(events: EvtxEvent[]): ChartConfig[];
-  abstract getExportData(events: EvtxEvent[]): Record<string, unknown>[];
+export function emptyResult(): AnalysisResult {
+  return { stats: [], charts: [], views: [], notes: [] };
 }
 
-export class PluginRegistry {
-  private plugins: Map<string, Plugin> = new Map();
-  private categories: Map<string, Plugin[]> = new Map();
-
-  register(plugin: Plugin): void {
-    this.plugins.set(plugin.name, plugin);
-
-    const cat = plugin.category || 'Uncategorized';
-    if (!this.categories.has(cat)) {
-      this.categories.set(cat, []);
-    }
-    this.categories.get(cat)!.push(plugin);
-  }
-
-  get(name: string): Plugin | undefined {
-    return this.plugins.get(name);
-  }
-
-  getAll(): Plugin[] {
-    return Array.from(this.plugins.values());
-  }
-
-  getCategories(): Map<string, Plugin[]> {
-    return this.categories;
-  }
-
-  getPluginEvents(pluginName: string): EvtxEvent[] {
-    const plugin = this.plugins.get(pluginName);
-    if (!plugin) return [];
-
-    const filter = plugin.getFilters();
-    const events = eventStore.query(filter);
-    return plugin.processEvents(events);
-  }
+/** Standard columns shared by most views: time, event ID, computer. */
+export function timeColumn<R extends { event: EvtxEvent }>(label = 'Time'): Column<R> {
+  return { id: 'time', label, kind: 'time', value: r => r.event.ts, size: 190 };
 }
 
-export const pluginRegistry = new PluginRegistry();
+export function eventIdColumn<R extends { event: EvtxEvent }>(): Column<R> {
+  return { id: 'eventId', label: 'Event ID', kind: 'number', value: r => r.event.eventId, size: 80, facet: true };
+}
+
+export function computerColumn<R extends { event: EvtxEvent }>(): Column<R> {
+  return { id: 'computer', label: 'Computer', value: r => r.event.computer, size: 160, facet: true };
+}
+
+export function recordIdColumn<R extends { event: EvtxEvent }>(): Column<R> {
+  return { id: 'recordId', label: 'Record ID', kind: 'number', value: r => r.event.recordId, size: 90, hidden: true };
+}

@@ -1,30 +1,19 @@
+/// <reference types="vitest/config" />
+import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vite';
 import vue from '@vitejs/plugin-vue';
-import { resolve } from 'path';
 
 export default defineConfig({
-  base: '/',
-  define: { 'process.env': '{}' },
+  // Relative asset URLs: the site works from any path, including a local static server.
+  base: './',
   plugins: [vue()],
   resolve: {
     alias: {
-      '@': resolve(__dirname, 'src'),
-      'fs': resolve(__dirname, 'src/stubs/fs.ts'),
-      '@ts-evtx/messages': resolve(__dirname, 'src/stubs/ts-evtx-messages.ts'),
+      '@': fileURLToPath(new URL('./src', import.meta.url)),
+      '@wasm': fileURLToPath(new URL('./wasm/pkg', import.meta.url)),
     },
   },
-  esbuild: {
-    keepNames: true,
-  },
-  build: {
-    outDir: 'docs',
-    cssCodeSplit: false,
-    modulePreload: false,
-    rollupOptions: {
-      output: {
-        manualChunks: undefined,
-        inlineDynamicImports: true,
-      },
-    },
-  },
+  worker: { format: 'es' },
+  build: { outDir: 'dist', target: 'es2022' },
+  test: { include: ['tests/**/*.test.ts'], environment: 'node' },
 });
