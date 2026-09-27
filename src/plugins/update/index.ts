@@ -94,7 +94,10 @@ export const update: Plugin = {
         },
       ],
       views: [
-        eventView('events', 'Events', rows, eventColumns),
+        {
+          ...eventView('events', 'Events', rows, eventColumns),
+          timeline: r => (r.event.eventId === 19 || r.event.eventId === 20 ? { title: `Update ${r.action.toLowerCase()}: ${r.kb || r.title}`, detail: [r.title, r.error && `Error ${r.error}`].filter(Boolean).join(' · ') } : undefined),
+        },
         { id: 'updates', label: 'Updates', rows: updates, columns: summaryColumns, event: r => r.sample, sort: { id: 'firstSeen', desc: true } },
       ],
       notes: [],

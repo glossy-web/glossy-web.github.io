@@ -240,7 +240,16 @@ export const usbStorage: Plugin = {
       ],
       views: [
         { id: 'devices', label: 'Devices', rows: deviceRows, columns: deviceColumns, event: r => r.sample, sort: { id: 'lastConnected', desc: true } },
-        eventView('history', 'History', rows, historyColumns),
+        {
+          ...eventView('history', 'History', rows, historyColumns),
+          timeline: r =>
+            r.action === 'Device configured' || r.action === 'Device started'
+              ? undefined
+              : {
+                  title: `USB ${r.action.toLowerCase()}: ${deviceName(r.identity) || r.identity.kind || 'device'}`,
+                  detail: [r.serial && `serial ${r.serial}`, Number.isFinite(r.capacity) && formatBytes(r.capacity), r.volumeSerial && `volume ${r.volumeSerial}`, r.detail].filter(Boolean).join(' · '),
+                },
+        },
       ],
       notes,
     };

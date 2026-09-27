@@ -18,7 +18,12 @@ A browser port of [Glossy](https://github.com/whatabeautifulmemory/glossy) (KDFS
 - SHA-256 per file; a file loaded twice is skipped, and records already loaded from another copy (shadow copies, archives) are not added twice.
 - Gaps in each file's record numbering, records whose time runs backwards, and dirty/full headers are listed in the overview.
 - Times are UTC by default, with a selectable IANA time zone that is named everywhere it applies. CSV exports use ISO 8601 with the offset and include channel, provider, event ID, record ID and source file for every row. Cells that a spreadsheet would run as a formula are prefixed with `'`.
+- Every table also exports [Timesketch](https://timesketch.org/) JSONL: `message`, `datetime` (UTC), `timestamp_desc` and `timestamp` (µs), the visible columns as snake_case fields, and the record's trace under plaso's EVTX field names (`computer_name`, `source_name`, `event_identifier`, `record_number`, plus `channel` and `evtx_file`).
 - A coverage panel shows which of the key logs are loaded and which are disabled by default on Windows, so absent logs are not read as absent activity.
+
+**Timeline**
+
+The Timeline page runs every module with its default options and puts their rows in one chronology (Event, Detail, Accounts, Remote address), in the spirit of EvtxECmd maps and Hayabusa timelines. An event two modules report (a type 10 logon is also an RDP stage) appears once, listing both. Bookkeeping events stay out: logoffs, process exits, service state changes, duplicate MSI lines and PowerShell module logging without indicators. Entries a module highlights (failed logons, suspicious services, protection turned off, …) can be shown alone. The Entities view lists every account, remote address and computer with counts and first/last seen; clicking one filters the timeline to it.
 
 **Analysis modules**
 
@@ -44,7 +49,7 @@ A browser port of [Glossy](https://github.com/whatabeautifulmemory/glossy) (KDFS
 | Document Printing | Printed documents with owner, client, printer, pages; spool file; default printer changes | PrintService 307/800/801/805/812/823/842 |
 | Wireless & Networks | Wi-Fi connections, failures, networks and their security; network connections by name | WLAN-AutoConfig 8000–8003, NetworkProfile 10000/10001 |
 
-Every module has an event table (filter any column, search all columns, sort, CSV export) and opens any row as the full record.
+Every module has an event table (filter any column, search all columns, sort, CSV and JSONL export) and opens any row as the full record.
 
 Findings are leads, not verdicts: check them against the original record (XML view) and other artifacts.
 
@@ -69,9 +74,9 @@ npm run build        # type check + production build into dist/
 
 The Rust side is a thin wrapper in [`wasm/src/lib.rs`](wasm/src/lib.rs); everything else is Vue 3 + TypeScript:
 
-- `src/core` — record normalization, the event store (dedupe, integrity checks), time zone handling, CSV
+- `src/core` — record normalization, the event store (dedupe, integrity checks), time zone handling, CSV and JSONL export
 - `src/parser` — the Web Worker that runs the WebAssembly parser
-- `src/plugins` — one folder per analysis module
+- `src/plugins` — one folder per analysis module; each view's `timeline` mapping decides what reaches the Timeline
 - `src/components` — UI (tables use TanStack Table + Virtual, charts use ECharts)
 
 ## Deployment

@@ -203,7 +203,10 @@ export const accountManagement: Plugin = {
       ],
       charts: [],
       views: [
-        eventView('events', 'Events', rows, eventColumns),
+        {
+          ...eventView('events', 'Events', rows, eventColumns),
+          timeline: r => ({ title: r.action, detail: [r.group && `Group ${r.group}`, r.detail].filter(Boolean).join(' · '), users: [r.target, r.by], tone: tone(r) }),
+        },
         { id: 'accounts', label: 'Accounts', rows: summaries, columns: summaryColumns, event: r => r.sample, sort: { id: 'created', desc: true } },
       ],
       notes: opts['hideEnum'] && all.length > rows.length

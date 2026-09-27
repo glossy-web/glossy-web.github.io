@@ -218,7 +218,19 @@ export const logon: Plugin = {
         { kind: 'ranking', title: 'Failed logons by reason', items: ranking(failures.map(r => r.failure || '(no status)'), 8) },
       ],
       views: [
-        eventView('events', 'Events', rows, eventColumns),
+        {
+          ...eventView('events', 'Events', rows, eventColumns),
+          timeline: r =>
+            r.event.eventId === 4634 || r.event.eventId === 4647
+              ? undefined
+              : {
+                  title: r.logonType ? `${r.action} (type ${r.logonType})` : r.action,
+                  detail: [r.admin && 'Admin', r.failure, r.target && `Target ${r.target}`, r.workstation && `Workstation ${r.workstation}`, r.auth].filter(Boolean).join(' · '),
+                  users: [r.user],
+                  remote: r.sourceIp,
+                  tone: tone(r),
+                },
+        },
         { ...eventView('sessions', 'Sessions', sessions, sessionColumns) },
         { id: 'failures', label: 'Failures by source', rows: failureGroups, columns: failureColumns, event: r => r.sample, sort: { id: 'count', desc: true } },
       ],

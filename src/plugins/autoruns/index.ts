@@ -218,7 +218,10 @@ export const autoruns: Plugin = {
       ],
       charts: [],
       views: [
-        eventView('events', 'Events', rows, eventColumns),
+        {
+          ...eventView('events', 'Events', rows, eventColumns),
+          timeline: r => ({ title: `${r.action}: ${r.name}`, detail: [r.command, r.process].filter(Boolean).join(' · '), users: [r.user], tone: tone(r) }),
+        },
         { id: 'tasks', label: 'Tasks', rows: taskSummaries(visible), columns: taskColumns, event: r => r.sample, sort: { id: 'created', desc: true } },
       ],
       notes: [],

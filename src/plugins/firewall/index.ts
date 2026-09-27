@@ -204,7 +204,14 @@ export const firewall: Plugin = {
       ],
       charts: [],
       views: [
-        eventView('events', 'Changes', rows, eventColumns),
+        {
+          ...eventView('events', 'Changes', rows, eventColumns),
+          timeline: r => ({
+            title: `Firewall: ${r.action}${r.rule ? ` (${r.rule})` : ''}`,
+            detail: [r.direction, r.verdict, r.protocol, r.ports, r.program, r.profiles, r.detail].filter(Boolean).join(' · '),
+            tone: tone(r),
+          }),
+        },
         { id: 'rules', label: 'Rules (replayed)', rows: replay(rows), columns: ruleColumns, event: r => r.sample, sort: { id: 'lastChange', desc: true } },
       ],
       notes: [{ tone: 'info', text: 'Only rules changed while the log was recording are known here; the full rule set lives in the registry (SYSTEM\\CurrentControlSet\\Services\\SharedAccess).' }],

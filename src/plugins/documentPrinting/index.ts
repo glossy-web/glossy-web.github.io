@@ -112,7 +112,13 @@ export const documentPrinting: Plugin = {
             { kind: 'ranking', title: 'Documents by user', items: ranking(printed.map(j => j.user), 10) },
           ]
         : [],
-      views: [eventView('jobs', 'Printed documents', printed, jobColumns), eventView('events', 'All print events', all, eventColumns)],
+      views: [
+        {
+          ...eventView('jobs', 'Printed documents', printed, jobColumns),
+          timeline: r => ({ title: `Printed: ${r.document}`, detail: [r.printer, Number.isFinite(r.pages) && `${r.pages} page(s)`, r.port].filter(Boolean).join(' · '), users: [r.user], remote: r.client.replace(/^\\\\/, '') }),
+        },
+        eventView('events', 'All print events', all, eventColumns),
+      ],
       notes: [],
     };
   },

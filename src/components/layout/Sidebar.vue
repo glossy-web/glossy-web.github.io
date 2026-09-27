@@ -12,6 +12,11 @@
           <span class="count">{{ total.toLocaleString() }}</span>
         </a>
       </li>
+      <li>
+        <a href="#" class="item" :class="{ active: active === 'timeline' }" @click.prevent="$emit('select', 'timeline')">
+          <i class="bi bi-clock-history" aria-hidden="true"></i><span>Timeline</span>
+        </a>
+      </li>
       <li v-for="cat in groups" :key="cat.id" class="mt-2">
         <div class="category"><i :class="`bi bi-${cat.icon}`" aria-hidden="true"></i>{{ cat.label }}</div>
         <ul class="list-unstyled">

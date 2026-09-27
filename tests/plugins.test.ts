@@ -39,7 +39,7 @@ describe('every plugin', () => {
 
   it('have unique names and declare their log channels', () => {
     expect(new Set(plugins.map(p => p.name)).size).toBe(plugins.length);
-    for (const p of plugins.filter(p => p.name !== 'showAll')) expect(p.sources.length, p.name).toBeGreaterThan(0);
+    for (const p of plugins.filter(p => p.category !== 'All')) expect(p.sources.length, p.name).toBeGreaterThan(0);
   });
 });
 
@@ -256,6 +256,21 @@ describe('softwareInstall', () => {
     const events = view(result.views, 'events').rows;
     const installs = result.stats.find(s => s.label === 'Installs')!.value;
     expect(installs).toBe(events.filter(r => r.event.eventId === 1033).length);
+  });
+
+  it('reads a non-zero 1033 status as a failed install, counted once with its 11708', () => {
+    const msi = (eventId: number, list: string[]) => makeEvent({ provider: 'MsiInstaller', eventId, channel: 'Application', list });
+    const { ctx } = storeOf([
+      msi(1033, ['Bad App', '1.0', '1033', '1603', 'Evil Corp']),
+      msi(11708, ['Product: Bad App -- Installation failed.']),
+      msi(1033, ['Good App', '2.0', '1033', '0', 'Good Corp']),
+    ]);
+    const result = softwareInstall.analyze(ctx, {});
+    const rows = view(result.views, 'events').rows;
+    expect(rows.map(r => r.kind)).toEqual(['Install failed', 'Install failed', 'Installed']);
+    expect(rows[0].status).toBe('Status 1603');
+    expect(result.stats.find(s => s.label === 'Failed')!.value).toBe(1);
+    expect(result.stats.find(s => s.label === 'Installs')!.value).toBe(1);
   });
 
   it('decodes the product code carried in Binary', () => {

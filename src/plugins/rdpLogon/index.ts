@@ -1,5 +1,5 @@
 import type { EvtxEvent } from '@/core/evtx/types';
-import type { Column, Plugin, SourceSpec } from '@/core/plugin';
+import type { Column, Plugin, SourceSpec, Tone } from '@/core/plugin';
 import { account, ipScope, splitHostPort } from '@/core/format';
 import { failureReason, isNoiseAccount } from '@/core/lookups';
 import { formatDuration } from '@/core/time';
@@ -94,6 +94,8 @@ function toRow(e: EvtxEvent): RdpRow | null {
 }
 
 const isLocal = (r: RdpRow) => r.address.toUpperCase() === 'LOCAL';
+
+const rdpTone = (r: RdpRow): Tone | undefined => (r.stage.startsWith('Logon failed') ? 'danger' : r.direction === 'Inbound' && ipScope(r.address) === 'public' ? 'warning' : undefined);
 
 const eventColumns: Column<RdpRow>[] = withBase<RdpRow>([
   text('direction', 'Direction', r => r.direction, { size: 90, facet: true }),
@@ -228,7 +230,16 @@ export const rdpLogon: Plugin = {
         },
       ],
       views: [
-        eventView('events', 'Events', rows, eventColumns),
+        {
+          ...eventView('events', 'Events', rows, eventColumns),
+          timeline: r => ({
+            title: `RDP: ${r.stage}`,
+            detail: [r.direction === 'Outbound' && 'Outbound', r.session && `Session ${r.session}`, r.detail].filter(Boolean).join(' · '),
+            users: [r.user],
+            remote: r.address,
+            tone: rdpTone(r),
+          }),
+        },
         eventView('sessions', 'Sessions', sessions(rows), sessionColumns),
         { id: 'sources', label: 'Source addresses', rows: sourceRows, columns: sourceColumns, event: r => r.sample, sort: { id: 'last', desc: true } },
       ],

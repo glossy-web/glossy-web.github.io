@@ -98,7 +98,10 @@ export const eventReset: Plugin = {
       ],
       charts: [],
       views: [
-        eventView('events', 'Events', rows, eventColumns),
+        {
+          ...eventView('events', 'Events', rows, eventColumns),
+          timeline: r => ({ title: r.action, detail: [r.log && `Log: ${r.log}`, r.detail].filter(Boolean).join(' · '), users: [r.by], tone: r.severity }),
+        },
         { id: 'gaps', label: 'Record number gaps', rows: gaps, columns: gapColumns, sort: { id: 'count', desc: true } },
       ],
       notes: gaps.length
