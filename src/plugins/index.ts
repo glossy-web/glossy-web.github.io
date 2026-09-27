@@ -1,42 +1,43 @@
-import { pluginRegistry } from '@/core/plugin';
-import { ShowAllPlugin } from './showAll';
-import { SystemOnOffPlugin } from './systemOnOff';
-import { AutorunsPlugin } from './autoruns';
-import { FirewallPlugin } from './firewall';
-import { TimeChangePlugin } from './timeChange';
-import { UpdatePlugin } from './update';
-import { EventResetPlugin } from './eventReset';
-import { ServicesPlugin } from './services';
-import { LogonPlugin } from './logon';
-import { RdpLogonPlugin } from './rdpLogon';
-import { AccountPlugin } from './account';
-import { ProcessPlugin } from './process';
-import { ApplicationErrorsPlugin } from './applicationErrors';
-import { SoftwareInstallPlugin } from './softwareInstall';
-import { UsbStoragePlugin } from './usbStorage';
-import { CdRecordingPlugin } from './cdRecording';
-import { DocumentPrintingPlugin } from './documentPrinting';
-import { WirelessPlugin } from './wireless';
+import type { Plugin } from '@/core/plugin';
+import { showAll } from './showAll';
+import { systemOnOff } from './systemOnOff';
+import { autoruns } from './autoruns';
+import { services } from './services';
+import { firewall } from './firewall';
+import { timeChange } from './timeChange';
+import { update } from './update';
+import { eventReset } from './eventReset';
+import { logon } from './logon';
+import { rdpLogon } from './rdpLogon';
+import { accountManagement } from './account';
+import { processExecution } from './process';
+import { applicationErrors } from './applicationErrors';
+import { softwareInstall } from './softwareInstall';
+import { usbStorage } from './usbStorage';
+import { cdRecording } from './cdRecording';
+import { documentPrinting } from './documentPrinting';
+import { wireless } from './wireless';
 
-export function registerAllPlugins(): void {
-  pluginRegistry.register(new ShowAllPlugin());
-  pluginRegistry.register(new SystemOnOffPlugin());
-  pluginRegistry.register(new AutorunsPlugin());
-  pluginRegistry.register(new FirewallPlugin());
-  pluginRegistry.register(new TimeChangePlugin());
-  pluginRegistry.register(new UpdatePlugin());
-  pluginRegistry.register(new EventResetPlugin());
-  pluginRegistry.register(new ServicesPlugin());
-  pluginRegistry.register(new LogonPlugin());
-  pluginRegistry.register(new RdpLogonPlugin());
-  pluginRegistry.register(new AccountPlugin());
-  pluginRegistry.register(new ProcessPlugin());
-  pluginRegistry.register(new ApplicationErrorsPlugin());
-  pluginRegistry.register(new SoftwareInstallPlugin());
-  pluginRegistry.register(new UsbStoragePlugin());
-  pluginRegistry.register(new CdRecordingPlugin());
-  pluginRegistry.register(new DocumentPrintingPlugin());
-  pluginRegistry.register(new WirelessPlugin());
-}
+/** Every analysis module, in sidebar order within its category. */
+export const plugins: Plugin[] = [
+  showAll,
+  systemOnOff,
+  autoruns,
+  services,
+  firewall,
+  timeChange,
+  update,
+  eventReset,
+  logon,
+  rdpLogon,
+  accountManagement,
+  processExecution,
+  applicationErrors,
+  softwareInstall,
+  usbStorage,
+  cdRecording,
+  documentPrinting,
+  wireless,
+];
 
-export { pluginRegistry };
+export const pluginByName = new Map(plugins.map(p => [p.name, p]));

@@ -1,98 +1,119 @@
-import { PluginBase, type TableColumn, type DashboardData, type ChartConfig, type FilterDef } from '@/core/plugin';
 import type { EvtxEvent } from '@/core/evtx/types';
-import dayjs from 'dayjs';
+import type { Column, Plugin, SourceSpec } from '@/core/plugin';
+import { formatBytes, ranking } from '@/core/format';
+import { d, eventView, groupBy, text, withBase, type EventRow } from '../common';
+import { summarize } from '../showAll';
 
-export class DocumentPrintingPlugin extends PluginBase {
-  name = 'documentPrinting';
-  category = 'Hardware';
-  label = 'Document Printing';
-  description = 'Print job records';
-  icon = 'fa-print';
-  providers = ['Microsoft-Windows-PrintService'];
-  eventIds = [307, 308, 310, 311, 315, 316, 800, 801, 808, 842, 843];
+const PS = 'Microsoft-Windows-PrintService';
+const SOURCES: SourceSpec[] = [
+  { channel: 'Microsoft-Windows-PrintService/Operational', provider: PS, ids: [307, 800, 801, 805, 812, 823, 842], offByDefault: true },
+];
 
-  getFilterDefs(events: EvtxEvent[]): FilterDef[] {
-    const actions = [...new Set(events.map(e => this.getAction(e)))].sort();
-    return [
-      { key: 'user', label: 'User', type: 'text', width: '160px' },
-      { key: 'printer', label: 'Printer', type: 'text', width: '160px' },
-      { key: 'action', label: 'Action', type: 'select', options: actions },
-    ];
-  }
+const LABELS: Record<number, string> = {
+  307: 'Document printed',
+  800: 'Job spooled',
+  801: 'Job printing',
+  805: 'Job rendered',
+  812: 'Spool file operation failed',
+  823: 'Default printer changed',
+  842: 'Job sent through print processor',
+};
 
-  getTableColumns(): TableColumn[] {
-    return [
-      { key: 'timestamp', label: 'Timestamp', render: e => dayjs(e.timestamp).format('YYYY-MM-DD HH:mm:ss') },
-      { key: 'eventId', label: 'Event ID' },
-      { key: 'action', label: 'Action', render: e => this.getAction(e) },
-      { key: 'document', label: 'Document', render: e => (e.data['Document'] as string) || (e.data['param2'] as string) || '' },
-      { key: 'user', label: 'User', render: e => (e.data['User'] as string) || (e.data['param1'] as string) || '' },
-      { key: 'printer', label: 'Printer', render: e => (e.data['PrinterName'] as string) || '' },
-    ];
-  }
-
-  private getAction(e: EvtxEvent): string {
-    switch (e.eventId) {
-      case 307: return 'Document Printed';
-      case 308: return 'Document Deleted';
-      case 310: return 'Document Spooled';
-      case 311: return 'Document Error';
-      case 315: return 'Print Job Sent';
-      case 316: return 'Print Job Completed';
-      case 800: return 'Printer Added';
-      case 801: return 'Printer Deleted';
-      case 808: return 'Printer Config Changed';
-      case 842: return 'Print Job Paused';
-      case 843: return 'Print Job Resumed';
-      default: return `Event ${e.eventId}`;
-    }
-  }
-
-  processEvents(events: EvtxEvent[]): EvtxEvent[] {
-    return events.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
-  }
-
-  getDashboardData(events: EvtxEvent[]): DashboardData {
-    const users = new Map<string, number>();
-    for (const e of events) {
-      const u = (e.data['User'] as string) || (e.data['param1'] as string) || 'Unknown';
-      users.set(u, (users.get(u) || 0) + 1);
-    }
-    return {
-      summary: [
-        { title: 'Print Jobs', value: events.filter(e => [307, 315].includes(e.eventId)).length },
-        { title: 'Errors', value: events.filter(e => e.eventId === 311).length },
-        { title: 'Unique Users', value: users.size },
-      ],
-      charts: [{
-        type: 'bar', title: 'Print Jobs by User',
-        data: Array.from(users.entries()).sort((a, b) => b[1] - a[1]).slice(0, 10).map(([name, count]) => ({ name, count })),
-        xKey: 'name', yKey: 'count',
-      }],
-    };
-  }
-
-  getChartData(events: EvtxEvent[]): ChartConfig[] {
-    const byDate = new Map<string, number>();
-    for (const e of events) {
-      const d = dayjs(e.timestamp).format('YYYY-MM-DD');
-      byDate.set(d, (byDate.get(d) || 0) + 1);
-    }
-    return [{
-      type: 'bar', title: 'Print History',
-      data: Array.from(byDate.entries()).map(([date, count]) => ({ date, count })),
-      xKey: 'date', yKey: 'count',
-    }];
-  }
-
-  getExportData(events: EvtxEvent[]): Record<string, unknown>[] {
-    return events.map(e => ({
-      Timestamp: e.timestamp.toISOString(),
-      EventID: e.eventId,
-      Action: this.getAction(e),
-      Document: e.data['Document'] || e.data['param2'] || '',
-      User: e.data['User'] || e.data['param1'] || '',
-      Printer: e.data['PrinterName'] || '',
-    }));
-  }
+export interface PrintJob extends EventRow {
+  document: string;
+  user: string;
+  client: string;
+  printer: string;
+  port: string;
+  bytes: number;
+  pages: number;
+  jobId: string;
+  spoolFile: string;
 }
+
+/**
+ * 307 "Document %1, %2 owned by %3 on %4 was printed on %5 through port %6. Size in bytes: %7. Pages printed: %8."
+ * The spool file path comes from an 812 in the same job, grouped as the original Glossy did:
+ * events of one spooler thread (ProcessID/ThreadID) from an 801 up to the next 801.
+ */
+function jobs(events: EvtxEvent[]): PrintJob[] {
+  const out: PrintJob[] = [];
+  for (const list of groupBy(events, e => `${e.computer}\u0001${e.pid}\u0001${e.tid}`).values()) {
+    let spool = '';
+    for (const e of list) {
+      if (e.eventId === 801) spool = '';
+      else if (e.eventId === 812) spool = d(e, 'Source') || spool;
+      else if (e.eventId === 307) {
+        out.push({
+          event: e,
+          jobId: d(e, 'Param1'),
+          document: d(e, 'Param2'),
+          user: d(e, 'Param3'),
+          client: d(e, 'Param4'),
+          printer: d(e, 'Param5'),
+          port: d(e, 'Param6'),
+          bytes: Number(d(e, 'Param7')),
+          pages: Number(d(e, 'Param8')),
+          spoolFile: spool,
+        });
+      }
+    }
+  }
+  return out.sort((a, b) => a.event.ts - b.event.ts);
+}
+
+const jobColumns: Column<PrintJob>[] = withBase<PrintJob>([
+  text('document', 'Document', r => r.document, { size: 320 }),
+  text('user', 'User', r => r.user, { size: 150, facet: true }),
+  text('client', 'Client', r => r.client, { size: 150, facet: true }),
+  text('printer', 'Printer', r => r.printer, { size: 220, facet: true }),
+  { id: 'pages', label: 'Pages', kind: 'number', value: r => r.pages, size: 70 },
+  { id: 'bytes', label: 'Size', kind: 'number', value: r => r.bytes, text: r => formatBytes(r.bytes), size: 90 },
+  text('port', 'Port', r => r.port, { size: 140 }),
+  text('jobId', 'Job', r => r.jobId, { size: 60, hidden: true }),
+  text('spool', 'Spool file', r => r.spoolFile, { size: 300, kind: 'mono', hidden: true }),
+]);
+
+interface PrintEvent extends EventRow {
+  action: string;
+  detail: string;
+}
+
+const eventColumns: Column<PrintEvent>[] = withBase<PrintEvent>([
+  text('action', 'Action', r => r.action, { size: 240, facet: true }),
+  text('detail', 'Detail', r => r.detail, { size: 600 }),
+]);
+
+export const documentPrinting: Plugin = {
+  name: 'documentPrinting',
+  label: 'Document Printing',
+  category: 'Hardware',
+  icon: 'printer',
+  description: 'Printed documents with owner, client machine, printer and page count, plus default printer changes. The PrintService/Operational log must be enabled beforehand; it is off by default.',
+  sources: SOURCES,
+  analyze(ctx) {
+    const events = ctx.select(SOURCES);
+    const printed = jobs(events);
+    const all: PrintEvent[] = events.map(e => ({
+      event: e,
+      action: LABELS[e.eventId] ?? String(e.eventId),
+      detail: e.eventId === 823 ? d(e, 'NewDefaultPrinter').split(',')[0] ?? '' : summarize(e),
+    }));
+    return {
+      stats: [
+        { label: 'Documents printed', value: printed.length },
+        { label: 'Pages', value: printed.reduce((n, j) => n + (Number.isFinite(j.pages) ? j.pages : 0), 0) },
+        { label: 'Users', value: new Set(printed.map(j => j.user.toLowerCase())).size },
+        { label: 'Printers', value: new Set(printed.map(j => j.printer)).size },
+      ],
+      charts: printed.length
+        ? [
+            { kind: 'timeline', title: 'Documents printed', series: [{ name: 'Documents', ts: printed.map(j => j.event.ts) }] },
+            { kind: 'ranking', title: 'Documents by user', items: ranking(printed.map(j => j.user), 10) },
+          ]
+        : [],
+      views: [eventView('jobs', 'Printed documents', printed, jobColumns), eventView('events', 'All print events', all, eventColumns)],
+      notes: [],
+    };
+  },
+};

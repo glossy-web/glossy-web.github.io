@@ -1,122 +1,228 @@
-import { PluginBase, type TableColumn, type DashboardData, type ChartConfig, type FilterDef } from '@/core/plugin';
 import type { EvtxEvent } from '@/core/evtx/types';
-import dayjs from 'dayjs';
+import type { Column, Plugin, Tone } from '@/core/plugin';
+import { account, countBy, ipScope, ranking } from '@/core/format';
+import { failureReason, isNoiseAccount, logonTypeName, messageCode } from '@/core/lookups';
+import { formatDuration } from '@/core/time';
+import { d, eventView, groupBy, SECURITY, text, withBase, type EventRow } from '../common';
 
-export class LogonPlugin extends PluginBase {
-  name = 'logon';
-  category = 'Account';
-  label = 'Account Logon';
-  description = 'Logon/logoff events with failure reason analysis';
-  icon = 'fa-sign-in';
-  providers = ['Microsoft-Windows-Security-Auditing'];
-  eventIds = [4624, 4625, 4647, 4672, 4634, 4778, 4779, 4800, 4801];
+const LABELS: Record<number, string> = {
+  4624: 'Logon',
+  4625: 'Logon failed',
+  4634: 'Logoff',
+  4647: 'User-initiated logoff',
+  4648: 'Logon with explicit credentials',
+  4778: 'Session reconnected',
+  4779: 'Session disconnected',
+  4800: 'Workstation locked',
+  4801: 'Workstation unlocked',
+};
 
-  getFilterDefs(events: EvtxEvent[]): FilterDef[] {
-    const actions = [...new Set(events.map(e => this.getAction(e)))].sort();
-    const logonTypes = [...new Set(events.map(e => this.getLogonType(e)).filter(Boolean))].sort();
-    return [
-      { key: 'user', label: 'User', type: 'text', width: '160px' },
-      { key: 'logonType', label: 'Logon Type', type: 'select', options: logonTypes },
-      { key: 'sourceIP', label: 'Source IP', type: 'text', width: '160px' },
-      { key: 'action', label: 'Action', type: 'select', options: actions },
-    ];
+export interface LogonRow extends EventRow {
+  action: string;
+  user: string;
+  sid: string;
+  logonType: string;
+  sourceIp: string;
+  workstation: string;
+  auth: string;
+  logonId: string;
+  process: string;
+  admin: boolean;
+  elevated: string;
+  failure: string;
+  target: string;
+}
+
+const key = (e: EvtxEvent, logonId: string) => `${e.computer}\u0001${logonId}`;
+
+function toRow(e: EvtxEvent, admins: Set<string>): LogonRow {
+  const row: LogonRow = {
+    event: e,
+    action: LABELS[e.eventId] ?? String(e.eventId),
+    user: account(e.data['TargetDomainName'], e.data['TargetUserName']),
+    sid: d(e, 'TargetUserSid'),
+    logonType: logonTypeName(d(e, 'LogonType')),
+    sourceIp: d(e, 'IpAddress'),
+    workstation: d(e, 'WorkstationName'),
+    auth: [d(e, 'AuthenticationPackageName'), d(e, 'LmPackageName')].filter(Boolean).join(' / '),
+    logonId: d(e, 'TargetLogonId'),
+    process: d(e, 'ProcessName'),
+    admin: false,
+    elevated: messageCode(d(e, 'ElevatedToken')),
+    failure: '',
+    target: '',
+  };
+  switch (e.eventId) {
+    case 4624:
+      row.admin = admins.has(key(e, row.logonId));
+      break;
+    case 4625:
+      row.failure = failureReason(e.data['Status'], e.data['SubStatus']);
+      break;
+    case 4648:
+      row.user = account(e.data['SubjectDomainName'], e.data['SubjectUserName']);
+      row.sid = d(e, 'SubjectUserSid');
+      row.logonId = d(e, 'SubjectLogonId');
+      row.target = [account(e.data['TargetDomainName'], e.data['TargetUserName']), d(e, 'TargetServerName')].filter(Boolean).join(' @ ');
+      break;
+    case 4778:
+    case 4779:
+      row.user = account(e.data['AccountDomain'], e.data['AccountName']);
+      row.sourceIp = d(e, 'ClientAddress');
+      row.workstation = d(e, 'ClientName');
+      row.logonId = d(e, 'LogonID');
+      row.target = d(e, 'SessionName');
+      break;
   }
+  return row;
+}
 
-  getTableColumns(): TableColumn[] {
-    return [
-      { key: 'timestamp', label: 'Timestamp', render: e => dayjs(e.timestamp).format('YYYY-MM-DD HH:mm:ss') },
-      { key: 'eventId', label: 'Event ID' },
-      { key: 'action', label: 'Action', render: e => this.getAction(e) },
-      { key: 'user', label: 'User', render: e => (e.data['TargetUserName'] as string) || '' },
-      { key: 'logonType', label: 'Logon Type', render: e => this.getLogonType(e) },
-      { key: 'sourceIP', label: 'Source IP', render: e => (e.data['IpAddress'] as string) || (e.data['SourceNetworkAddress'] as string) || '' },
-    ];
-  }
+function isNoise(r: LogonRow): boolean {
+  const e = r.event;
+  if (e.eventId === 4648) return isNoiseAccount(e.data['SubjectUserName'] ?? '', r.sid);
+  if (e.eventId === 4778 || e.eventId === 4779) return false;
+  const type = Number(e.data['LogonType']);
+  if (type === 0 || type === 5) return true;
+  return isNoiseAccount(e.data['TargetUserName'] ?? '', r.sid);
+}
 
-  private getAction(e: EvtxEvent): string {
-    switch (e.eventId) {
-      case 4624: return 'Logon Success';
-      case 4625: return 'Logon Failed';
-      case 4647: return 'User Initiated Logoff';
-      case 4672: return 'Special Privilege Logon';
-      case 4634: return 'Logoff';
-      case 4778: return 'Session Reconnect';
-      case 4779: return 'Session Disconnect';
-      case 4800: return 'Workstation Lock';
-      case 4801: return 'Workstation Unlock';
-      default: return `Event ${e.eventId}`;
-    }
-  }
+function tone(r: LogonRow): Tone | undefined {
+  if (r.event.eventId === 4625) return 'danger';
+  if (r.admin) return 'warning';
+  return undefined;
+}
 
-  private getLogonType(e: EvtxEvent): string {
-    const t = Number(e.data['LogonType'] || -1);
-    const types: Record<number, string> = {
-      2: 'Interactive',
-      3: 'Network',
-      4: 'Batch',
-      5: 'Service',
-      7: 'Unlock',
-      8: 'NetworkCleartext',
-      9: 'NewCredentials',
-      10: 'RemoteInteractive',
-      11: 'CachedInteractive',
-    };
-    return types[t] || (t > -1 ? `Type ${t}` : '');
-  }
+const eventColumns: Column<LogonRow>[] = withBase<LogonRow>([
+  text('action', 'Action', r => r.action, { size: 170, facet: true, tone }),
+  text('user', 'Account', r => r.user, { size: 200 }),
+  text('logonType', 'Logon type', r => r.logonType, { size: 150, facet: true }),
+  text('sourceIp', 'Source IP', r => r.sourceIp, { size: 130 }),
+  text('workstation', 'Workstation', r => r.workstation, { size: 130 }),
+  text('admin', 'Admin', r => (r.admin ? 'Yes' : ''), { size: 70, facet: true }),
+  text('failure', 'Failure reason', r => r.failure, { size: 230, facet: true }),
+  text('target', 'Target / session', r => r.target, { size: 200 }),
+  text('auth', 'Auth package', r => r.auth, { size: 120, facet: true }),
+  text('process', 'Process', r => r.process, { size: 220, hidden: true }),
+  text('logonId', 'Logon ID', r => r.logonId, { size: 110, kind: 'mono', hidden: true }),
+  text('elevated', 'Elevated token', r => r.elevated, { size: 100, hidden: true }),
+  text('sid', 'SID', r => r.sid, { size: 200, kind: 'mono', hidden: true }),
+]);
 
-  processEvents(events: EvtxEvent[]): EvtxEvent[] {
-    return events.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
-  }
+interface SessionRow extends EventRow {
+  end: EvtxEvent | null;
+  user: string;
+  logonType: string;
+  sourceIp: string;
+  admin: boolean;
+  logonId: string;
+}
 
-  getDashboardData(events: EvtxEvent[]): DashboardData {
-    const success = events.filter(e => e.eventId === 4624).length;
-    const failed = events.filter(e => e.eventId === 4625).length;
-    const users = new Set(events.map(e => e.data['TargetUserName']));
+const sessionColumns: Column<SessionRow>[] = withBase<SessionRow>([
+  { id: 'end', label: 'Logoff', kind: 'time', value: r => r.end?.ts ?? NaN, size: 190 },
+  { id: 'duration', label: 'Duration', kind: 'number', value: r => (r.end ? r.end.ts - r.event.ts : NaN), text: r => (r.end ? formatDuration(r.end.ts - r.event.ts) : 'no logoff recorded'), size: 140 },
+  text('user', 'Account', r => r.user, { size: 200 }),
+  text('logonType', 'Logon type', r => r.logonType, { size: 150, facet: true }),
+  text('sourceIp', 'Source IP', r => r.sourceIp, { size: 130 }),
+  text('admin', 'Admin', r => (r.admin ? 'Yes' : ''), { size: 70, facet: true }),
+  text('logonId', 'Logon ID', r => r.logonId, { size: 110, kind: 'mono' }),
+]);
 
-    const logonTypes = new Map<string, number>();
-    for (const e of events.filter(e => e.eventId === 4624)) {
-      const t = this.getLogonType(e);
-      logonTypes.set(t, (logonTypes.get(t) || 0) + 1);
-    }
+interface FailureRow {
+  source: string;
+  user: string;
+  count: number;
+  first: number;
+  last: number;
+  reasons: string;
+  types: string;
+  sample: EvtxEvent;
+}
+
+const failureColumns: Column<FailureRow>[] = [
+  text('source', 'Source IP / workstation', r => r.source, { size: 200 }),
+  text('user', 'Account', r => r.user, { size: 200 }),
+  { id: 'count', label: 'Failures', kind: 'number', value: r => r.count, size: 90, tone: r => (r.count >= 10 ? 'danger' : undefined) },
+  { id: 'first', label: 'First', kind: 'time', value: r => r.first, size: 190 },
+  { id: 'last', label: 'Last', kind: 'time', value: r => r.last, size: 190 },
+  text('reasons', 'Reasons', r => r.reasons, { size: 320 }),
+  text('types', 'Logon types', r => r.types, { size: 160 }),
+];
+
+export const logon: Plugin = {
+  name: 'logon',
+  label: 'Account Logon',
+  category: 'Account',
+  icon: 'box-arrow-in-right',
+  description:
+    'Logon, logoff and failed logons from the Security log. Sessions are paired by Logon ID; administrator logons are those with a 4672 (special privileges) for the same Logon ID.',
+  sources: [{ channel: 'Security', provider: SECURITY, ids: [4624, 4625, 4634, 4647, 4648, 4672, 4778, 4779, 4800, 4801] }],
+  options: [{ id: 'hideNoise', label: 'Hide system, service and machine accounts', default: true }],
+  analyze(ctx, opts) {
+    const events = ctx.select(this.sources);
+    const admins = new Set(events.filter(e => e.eventId === 4672).map(e => key(e, d(e, 'SubjectLogonId'))));
+    const all = events.filter(e => e.eventId !== 4672).map(e => toRow(e, admins));
+    const rows = opts['hideNoise'] ? all.filter(r => !isNoise(r)) : all;
+
+    const successes = rows.filter(r => r.event.eventId === 4624);
+    const failures = rows.filter(r => r.event.eventId === 4625);
+
+    // Pair each logon with the first logoff for the same Logon ID on the same computer.
+    const logoffs = groupBy(
+      events.filter(e => e.eventId === 4634 || e.eventId === 4647),
+      e => key(e, d(e, 'TargetLogonId')),
+    );
+    const sessions: SessionRow[] = successes.map(r => {
+      const candidates = logoffs.get(key(r.event, r.logonId)) ?? [];
+      const end = candidates.find(e => e.ts >= r.event.ts) ?? null;
+      return { event: r.event, end, user: r.user, logonType: r.logonType, sourceIp: r.sourceIp, admin: r.admin, logonId: r.logonId };
+    });
+
+    const bySource = groupBy(failures, r => `${r.sourceIp || r.workstation}\u0001${r.user}`);
+    const failureGroups: FailureRow[] = [...bySource.values()].map(list => ({
+      source: list[0]!.sourceIp || list[0]!.workstation,
+      user: list[0]!.user,
+      count: list.length,
+      first: list[0]!.event.ts,
+      last: list[list.length - 1]!.event.ts,
+      reasons: countBy(list, r => r.failure).map(([k, n]) => `${k} ×${n}`).join('; '),
+      types: [...new Set(list.map(r => r.logonType))].join(', '),
+      sample: list[0]!.event,
+    }));
+
+    const publicSources = new Set(rows.filter(r => ipScope(r.sourceIp) === 'public').map(r => r.sourceIp));
+    const notes = [];
+    if (opts['hideNoise'] && all.length !== rows.length)
+      notes.push({ tone: 'info' as const, text: `${(all.length - rows.length).toLocaleString()} events from SYSTEM, service, machine ($) and virtual accounts are hidden.` });
+    if (publicSources.size)
+      notes.push({ tone: 'warning' as const, text: `Logon activity from ${publicSources.size} public IP address(es): ${[...publicSources].slice(0, 10).join(', ')}` });
 
     return {
-      summary: [
-        { title: 'Successful Logons', value: success },
-        { title: 'Failed Logons', value: failed },
-        { title: 'Unique Users', value: users.size },
+      stats: [
+        { label: 'Successful logons', value: successes.length },
+        { label: 'Failed logons', value: failures.length, tone: failures.length ? 'danger' : undefined },
+        { label: 'Accounts', value: new Set(successes.map(r => r.user.toLowerCase())).size },
+        { label: 'Admin logons', value: successes.filter(r => r.admin).length },
+        { label: 'Remote interactive (type 10)', value: successes.filter(r => r.event.data['LogonType'] === '10').length },
+        { label: 'Explicit credentials (4648)', value: rows.filter(r => r.event.eventId === 4648).length },
       ],
-      charts: [{
-        type: 'pie', title: 'Logon Types',
-        data: Array.from(logonTypes.entries()).map(([name, count]) => ({ name, count })),
-        xKey: 'name', yKey: 'count',
-      }],
+      charts: [
+        {
+          kind: 'clock',
+          title: 'Logon activity by time of day',
+          series: [
+            { name: 'Logon', ts: successes.map(r => r.event.ts) },
+            { name: 'Failed logon', ts: failures.map(r => r.event.ts) },
+            { name: 'Logoff', ts: rows.filter(r => r.event.eventId === 4634 || r.event.eventId === 4647).map(r => r.event.ts) },
+          ],
+        },
+        { kind: 'ranking', title: 'Failed logons by reason', items: ranking(failures.map(r => r.failure || '(no status)'), 8) },
+      ],
+      views: [
+        eventView('events', 'Events', rows, eventColumns),
+        { ...eventView('sessions', 'Sessions', sessions, sessionColumns) },
+        { id: 'failures', label: 'Failures by source', rows: failureGroups, columns: failureColumns, event: r => r.sample, sort: { id: 'count', desc: true } },
+      ],
+      notes,
     };
-  }
-
-  getChartData(events: EvtxEvent[]): ChartConfig[] {
-    const byDate = new Map<string, { success: number; failed: number }>();
-    for (const e of events) {
-      const d = dayjs(e.timestamp).format('YYYY-MM-DD');
-      if (!byDate.has(d)) byDate.set(d, { success: 0, failed: 0 });
-      const v = byDate.get(d)!;
-      if (e.eventId === 4624) v.success++;
-      if (e.eventId === 4625) v.failed++;
-    }
-    return [{
-      type: 'bar', title: 'Logon Activity',
-      data: Array.from(byDate.entries()).map(([date, v]) => ({ date, success: v.success, failed: v.failed })),
-      xKey: 'date', yKey: 'success', categoryKey: 'failed',
-    }];
-  }
-
-  getExportData(events: EvtxEvent[]): Record<string, unknown>[] {
-    return events.map(e => ({
-      Timestamp: e.timestamp.toISOString(),
-      EventID: e.eventId,
-      Action: this.getAction(e),
-      User: e.data['TargetUserName'],
-      LogonType: this.getLogonType(e),
-      SourceIP: e.data['IpAddress'] || e.data['SourceNetworkAddress'] || '',
-    }));
-  }
-}
+  },
+};
