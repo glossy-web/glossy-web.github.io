@@ -25,6 +25,10 @@
 
       <div class="body px-3 py-2">
         <template v-if="tab === 'general'">
+          <template v-if="extra">
+            <h3 class="h6">{{ extra.title }}</h3>
+            <pre class="raw extra">{{ extra.text }}</pre>
+          </template>
           <table class="table table-sm kv mb-3">
             <tbody>
               <tr><th>Time ({{ zoneLabel }})</th><td class="tabular">{{ formatTime(event.ts, zone) }}</td></tr>
@@ -71,7 +75,7 @@
 
       <footer class="d-flex gap-2 px-3 py-2 border-top">
         <button class="btn btn-sm btn-outline-secondary" @click="copy">
-          <i class="bi bi-clipboard"></i> {{ copied ? 'Copied' : `Copy ${tab === 'xml' ? 'XML' : 'JSON'}` }}
+          <i class="bi bi-clipboard"></i> {{ copied ? 'Copied' : `Copy ${copyTarget}` }}
         </button>
         <button class="btn btn-sm btn-secondary ms-auto" @click="$emit('close')">Close</button>
       </footer>
@@ -82,13 +86,14 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref } from 'vue';
 import type { EvtxEvent } from '@/core/evtx/types';
+import type { RowDetail } from '@/core/plugin';
 import { levelName } from '@/core/evtx/types';
 import { formatTime, offsetLabel, UTC } from '@/core/time';
 import { eventStore } from '@/core/store';
 import { createContext } from '@/core/context';
 import { renderXml } from '@/composables/useFileLoader';
 
-const props = defineProps<{ event: EvtxEvent; zone: string }>();
+const props = defineProps<{ event: EvtxEvent; zone: string; extra?: RowDetail }>();
 defineEmits<{ close: [] }>();
 
 const tabs = [
@@ -130,8 +135,10 @@ async function select(id: (typeof tabs)[number]['id']) {
   }
 }
 
+const copyTarget = computed(() => (tab.value === 'xml' ? 'XML' : tab.value === 'general' && props.extra ? 'text' : 'JSON'));
+
 async function copy() {
-  await navigator.clipboard.writeText(tab.value === 'xml' ? xml.value : json.value);
+  await navigator.clipboard.writeText(copyTarget.value === 'XML' ? xml.value : copyTarget.value === 'text' ? props.extra!.text : json.value);
   copied.value = true;
   setTimeout(() => (copied.value = false), 1500);
 }
@@ -183,5 +190,9 @@ onMounted(() => nextTick(() => dialog.value?.focus()));
 }
 .tabular {
   font-variant-numeric: tabular-nums;
+}
+.extra {
+  max-height: 45vh;
+  overflow: auto;
 }
 </style>

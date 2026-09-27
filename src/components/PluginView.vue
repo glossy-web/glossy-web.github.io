@@ -37,17 +37,18 @@
         :view="currentView"
         :zone="zone"
         :export-name="`${plugin.name}_${currentView.id}`"
-        @open="detail = $event"
+        @open="(event, extra) => (detail = { event, extra })"
       />
     </section>
 
-    <EventDetailModal v-if="detail" :event="detail" :zone="zone" @close="detail = null" />
+    <EventDetailModal v-if="detail" :event="detail.event" :extra="detail.extra" :zone="zone" @close="detail = null" />
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, ref, shallowRef } from 'vue';
 import type { EvtxEvent } from '@/core/evtx/types';
+import type { RowDetail } from '@/core/plugin';
 import { eventStore } from '@/core/store';
 import { createContext } from '@/core/context';
 import { pluginByName } from '@/plugins';
@@ -61,7 +62,7 @@ import EventDetailModal from './EventDetailModal.vue';
 const props = defineProps<{ name: string; zone: string; dark: boolean }>();
 
 const plugin = computed(() => pluginByName.get(props.name) ?? pluginByName.get('showAll')!);
-const detail = shallowRef<EvtxEvent | null>(null);
+const detail = shallowRef<{ event: EvtxEvent; extra: RowDetail | undefined } | null>(null);
 const viewId = ref('');
 
 const options = computed<Record<string, boolean>>(() => {
