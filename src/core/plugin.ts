@@ -114,6 +114,8 @@ export interface PluginContext {
   source(e: EvtxEvent): SourceFile | undefined;
   /** Every loaded source file. */
   files(): readonly SourceFile[];
+  /** The analyst's star on an event, with its note; undefined when the event is not starred. */
+  starred(e: EvtxEvent): { note: string } | undefined;
 }
 
 export type Category = 'System' | 'Account' | 'Application' | 'Hardware' | 'All';

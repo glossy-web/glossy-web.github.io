@@ -26,6 +26,7 @@
               <RouterLink :to="`/m/${p.name}`"><component :is="icon(p.icon)" /><span>{{ p.label }}</span></RouterLink>
             </SidebarMenuButton>
             <SidebarMenuBadge v-if="p.name === 'showAll'" class="text-muted-foreground">{{ total.toLocaleString() }}</SidebarMenuBadge>
+            <SidebarMenuBadge v-else-if="p.name === 'starred' && starCount" class="text-muted-foreground">{{ starCount.toLocaleString() }}</SidebarMenuBadge>
           </SidebarMenuItem>
         </SidebarMenu>
       </SidebarGroup>
@@ -73,12 +74,13 @@ import { CATEGORIES } from '@/core/settings';
 import { eventStore } from '@/core/store';
 import { plugins } from '@/plugins';
 import { icon } from '@/components/icons';
+import { starCount } from '@/composables/useStars';
 import logo from '@/assets/glossy.ico';
 
 const route = useRoute();
 const active = computed(() => (route.name === 'module' ? String(route.params['name']) : ''));
 
-/** Pages over all loaded events (All Events, Timeline), then the modules by category. */
+/** Pages over all loaded events (All Events, Timeline, Starred), then the modules by category. */
 const pages = plugins.filter(p => p.category === 'All');
 const groups = CATEGORIES.map(c => ({ ...c, plugins: plugins.filter(p => p.category === c.id) })).filter(c => c.plugins.length);
 
