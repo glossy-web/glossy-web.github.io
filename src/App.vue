@@ -2,7 +2,7 @@
   <div class="app d-flex flex-column">
     <header class="topbar d-flex align-items-center gap-3 px-3 border-bottom">
       <a href="#" class="brand text-reset text-decoration-none fw-semibold" @click.prevent="activePage = '__overview'">
-        <i class="bi bi-search me-1" aria-hidden="true"></i>Glossy
+        <img :src="icon" alt="" width="20" height="20" class="me-1" />Glossy
       </a>
       <span v-if="hasData || loader.busy" class="small text-body-secondary tabular">
         {{ sourceCount }} file(s) · {{ eventCount.toLocaleString() }} events
@@ -11,8 +11,8 @@
       <div class="ms-auto d-flex align-items-center gap-2">
         <label class="small text-body-secondary" for="tz">Time zone</label>
         <select id="tz" v-model="timeZone" class="form-select form-select-sm tz">
-          <option value="UTC">UTC</option>
-          <option v-if="local !== 'UTC'" :value="local">{{ local }} (this browser)</option>
+          <option :value="local">{{ local }} (system)</option>
+          <option v-if="local !== 'UTC'" value="UTC">UTC</option>
           <option disabled>──────────</option>
           <option v-for="z in zones" :key="z" :value="z">{{ z }}</option>
         </select>
@@ -29,7 +29,7 @@
       <main class="content d-flex flex-column flex-grow-1">
         <SourceIndex v-if="!hasData && !loader.files.length" @browse="fileInput?.click()" />
         <SourceList v-else-if="activePage === '__overview' || !hasData" :zone="timeZone" />
-        <PluginView v-else :key="activePage" :name="activePage" :zone="timeZone" :dark="dark" />
+        <PluginView v-else :key="activePage" :name="activePage" :zone="timeZone" />
       </main>
     </div>
 
@@ -38,7 +38,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
+import { computed, ref } from 'vue';
 import { eventStore } from '@/core/store';
 import { allZones, browserZone } from '@/core/time';
 import { clearAll, loadFiles, loader } from '@/composables/useFileLoader';
@@ -48,11 +48,12 @@ import SourceIndex from '@/components/SourceIndex.vue';
 import SourceList from '@/components/SourceList.vue';
 import PluginView from '@/components/PluginView.vue';
 import FileDropZone from '@/components/FileDropZone.vue';
+import icon from '@/assets/glossy.ico';
 
 const fileInput = ref<HTMLInputElement | null>(null);
 const folderInput = ref<HTMLInputElement | null>(null);
 const local = browserZone();
-const zones = allZones().filter(z => z !== 'UTC');
+const zones = allZones().filter(z => z !== 'UTC' && z !== local);
 
 const sourceCount = computed(() => {
   void eventStore.version.value;
@@ -81,19 +82,6 @@ function confirmClear() {
     activePage.value = '__overview';
   }
 }
-
-// Follow the operating system's light/dark preference (Bootstrap color modes).
-const media = window.matchMedia('(prefers-color-scheme: dark)');
-const dark = ref(media.matches);
-const applyTheme = () => {
-  dark.value = media.matches;
-  document.documentElement.setAttribute('data-bs-theme', dark.value ? 'dark' : 'light');
-};
-onMounted(() => {
-  applyTheme();
-  media.addEventListener('change', applyTheme);
-});
-onBeforeUnmount(() => media.removeEventListener('change', applyTheme));
 </script>
 
 <style scoped>
@@ -106,6 +94,8 @@ onBeforeUnmount(() => media.removeEventListener('change', applyTheme));
   background: var(--bs-tertiary-bg);
 }
 .brand {
+  display: flex;
+  align-items: center;
   font-size: 15px;
 }
 .tz {

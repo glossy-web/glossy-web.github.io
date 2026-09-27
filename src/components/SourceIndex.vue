@@ -1,6 +1,6 @@
 <template>
   <div class="landing d-flex flex-column align-items-center text-center p-4">
-    <h1 class="h3 mt-4">Glossy Event Log Forensics</h1>
+    <h1 class="h3 mt-4 d-flex align-items-center gap-2"><img :src="icon" alt="" width="32" height="32" />Glossy Event Log Forensics</h1>
     <p class="text-body-secondary col-lg-7">
       Windows event log (<code>.evtx</code>) analysis that runs entirely in your browser. Files are parsed locally by a
       WebAssembly build of the Rust <code>evtx</code> parser. Nothing is uploaded, and analysis makes no network requests.
@@ -14,7 +14,7 @@
 
     <ul class="facts text-start small text-body-secondary mt-4 col-lg-7">
       <li>Reads every chunk, including those a dirty (not cleanly closed) header leaves out, and reports damaged chunks instead of stopping.</li>
-      <li>Timestamps are shown in UTC by default; pick another time zone from the header. Exports carry the offset.</li>
+      <li>Timestamps are shown in this computer's time zone until you pick another (e.g. UTC) from the header; the zone is named wherever times appear. CSV exports carry the offset; JSONL for Timesketch is always UTC.</li>
       <li>Flags record-number gaps, duplicate files and duplicate records (e.g. shadow copies), and which logs are missing.</li>
       <li>Analysis modules follow the original <a :href="links.original" target="_blank" rel="noopener">Glossy</a> (<a :href="links.paper" target="_blank" rel="noopener">KDFS 2017 paper</a>, Korean) and current triage practice.</li>
     </ul>
@@ -29,6 +29,8 @@
 </template>
 
 <script setup lang="ts">
+import icon from '@/assets/glossy.ico';
+
 defineEmits<{ browse: [] }>();
 
 const links = {
