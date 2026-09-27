@@ -1,56 +1,82 @@
 # Glossy Event Log Forensics
 
-**[glossy-web.github.io](https://glossy-web.github.io/)** — no download, no install. Just open the link.
+**[glossy-web.github.io](https://glossy-web.github.io/)** — Windows event log (`.evtx`) forensics that runs entirely in the browser. Files are parsed and analyzed locally; nothing is uploaded, and analysis makes no network requests.
 
-Browser-based Windows Event Log (`.evtx`) forensics analysis tool. No server required — all processing happens locally in your browser.
+A browser port of [Glossy](https://github.com/whatabeautifulmemory/glossy) (KDFS 2017, [paper in Korean](https://github.com/whatabeautifulmemory/glossy/files/13562844/KDFS.2017.v0.1.pdf)), rebuilt around current triage practice.
 
-This is a vibecoding port of the 9-year-old [Glossy](https://github.com/whatabeautifulmemory/glossy) project to a pure browser application. **Output not reviewed. Bugs and unexpected behavior may occur. Not maintained.**
+## What it does
 
-## Features
+**Parsing you can rely on**
 
-- Drag & drop `.evtx` files — parsed entirely in-browser using [`@ts-evtx/core`](https://github.com/NickSmet/ts-evtx)
-- **18 analysis modules** across 5 categories, based on the [research paper (Korean)](https://github.com/whatabeautifulmemory/glossy/files/13562844/KDFS.2017.v0.1.pdf)
+- Records are decoded by the Rust [`evtx`](https://github.com/omerbenamram/evtx) crate (the parser behind Hayabusa and Chainsaw), compiled to WebAssembly and run in Web Workers, so large logs do not freeze the page.
+- Every 64 KiB chunk is read, including chunks a *dirty* header (a log copied from a live system) does not count. Damaged chunks and records are reported instead of silently dropped.
+- `EventData` (named and unnamed `Data`), `UserData` and forwarded-event `RenderingInfo` are all kept. Analysis never writes into the original record.
+- The XML view re-reads the record from the source file, so it shows exactly what is stored.
 
-| System | Account | Application | Hardware |
-|--------|---------|-------------|----------|
-| System On/Off | Account Logon | Process Execution | USB Storage |
-| Autoruns | RDP Logon | Application Error | CD/DVD Recording |
-| Firewall | Account Events | Software Install | Document Printing |
-| Time Change | | | Wireless Connect |
-| Windows Update | | | |
-| Event Reset | | | |
-| Services | | | |
+**Evidence handling**
 
-- Per-plugin filters (user, IP, process name, SSID, etc.)
-- Interactive tables with search, sort, pagination, CSV export
-- Dashboard summaries and timeline charts
-- Event detail view with full JSON
+- SHA-256 per file; a file loaded twice is skipped, and records already loaded from another copy (shadow copies, archives) are not added twice.
+- Gaps in each file's record numbering, records whose time runs backwards, and dirty/full headers are listed in the overview.
+- Times are UTC by default, with a selectable IANA time zone that is named everywhere it applies. CSV exports use ISO 8601 with the offset and include channel, provider, event ID, record ID and source file for every row. Cells that a spreadsheet would run as a formula are prefixed with `'`.
+- A coverage panel shows which of the key logs are loaded and which are disabled by default on Windows, so absent logs are not read as absent activity.
+
+**Analysis modules**
+
+| Module | What it shows | Main sources |
+|---|---|---|
+| System On/Off | Boots, shutdowns, crashes, sleep/resume, who requested a shutdown; boot sessions with uptime | Kernel-General 12/13, EventLog 6005/6006/6008/6009/6013, Kernel-Power 41/42/107/109, Power-Troubleshooter 1, User32 1074 |
+| Autoruns & Persistence | Scheduled tasks with their command, autostart registry values, Startup folder writes, WMI consumers | TaskScheduler 106/140/141/142/200/201/129, Security 4698–4702, 4657, 4663, Sysmon 13, WMI-Activity 5861 |
+| Services | Service installs with image path (suspicious paths flagged), start-type changes, crashes | SCM 7045/7034/7036/7040, Security 4697 |
+| Firewall | Rule and profile changes (Windows 10 and 11 IDs), firewall turned off, rules replayed to their final state | Firewall 2002–2010, 2032/2033, 2052, 2059/2060, 2071/2073, 2082/2083, 2097/2099 |
+| Time Change | Clock changes with jump size and the process responsible | Security 4616, Kernel-General 1 |
+| Windows Update | Downloads, installs, failures, KB numbers | WindowsUpdateClient 19/20/43/44 |
+| Log Clearing & Tampering | Cleared logs, logging stopped/full, audit policy changes, record-number gaps | Eventlog 1102/104/1100/1104/1105, Security 4719 |
+| Account Logon | Logons with failure reasons, admin logons (4672 by Logon ID), sessions, failures by source; noise filter | Security 4624/4625/4634/4647/4648/4672/4778/4779/4800/4801 |
+| RDP | Inbound chain (connection → authentication → logon → session) and outbound RDP, sessions, source addresses | RdpCoreTS 131, RCM 1149, Security 4624/4625 (type 10), 4778/4779, LSM 21–25/39/40, RDPClient 1024/1102 |
+| Account Management | Account lifecycle, renames, lockouts, group membership (admin groups highlighted) | Security 4720–4726, 4738, 4740, 4767, 4781, 4728/4729/4732/4733/4756/4757, 4731/4734/4735, 4798/4799 |
+| Process Execution | Processes with command line and parent (inferred for older 4688), rarest executables first | Security 4688/4689, Sysmon 1/5, Application-Experience 500 |
+| Application Errors | Crashes, hangs, error reports, .NET exceptions, with exception codes | Application Error 1000, Application Hang 1002, WER 1001, .NET Runtime 1026 |
+| Software Install | Installs and removals with product, version, publisher, product code | MsiInstaller 1033/1034/1035/11707/11708/11724/11725, Program-Inventory 903–908, Shell-Core 28115, Security 4657 |
+| USB Storage | Devices with serial, capacity and volume serial number; connection history; logged-on user (inferred) | Partition/Diagnostic 1006, Kernel-PnP 400/410/420/430, UserPnp 20001/20003, DriverFrameworks-UserMode 2003/2101/2102/10000 |
+| CD/DVD Recording | Optical drive events used by the original Glossy research as a burn indicator | cdrom 133 |
+| Document Printing | Printed documents with owner, client, printer, pages; spool file; default printer changes | PrintService 307/800/801/805/812/823/842 |
+| Wireless & Networks | Wi-Fi connections, failures, networks and their security; network connections by name | WLAN-AutoConfig 8000–8003, NetworkProfile 10000/10001 |
+
+Every module has an event table (filter any column, search all columns, sort, CSV export) and opens any row as the full record.
+
+Findings are leads, not verdicts: check them against the original record (XML view) and other artifacts.
 
 ## Usage
 
-Serve the `docs/` folder with any static server:
+Open the site, then drop `.evtx` files or a whole `C:\Windows\System32\winevt\Logs` folder onto the page (or use **Add files** / **Add folder**). Collect logs as raw copies (e.g. with KAPE); exporting through Event Viewer or `wevtutil epl` rewrites the files.
+
+Several useful logs are off by default and must be enabled before an incident to exist: `TaskScheduler/Operational`, `PrintService/Operational`, `DriverFrameworks-UserMode/Operational`, process command-line auditing for 4688, and object-access auditing (SACLs) for 4657/4663.
+
+## Development
+
+Prerequisites: Node.js 22, Rust (stable) with the `wasm32-unknown-unknown` target, and [`wasm-pack`](https://github.com/rustwasm/wasm-pack).
 
 ```bash
-npx serve docs
+rustup target add wasm32-unknown-unknown
+npm ci
+npm run build:wasm   # compiles wasm/ (Rust) into wasm/pkg
+npm run dev          # local dev server
+npm test             # regression tests on real EVTX fixtures (tests/fixtures)
+npm run build        # type check + production build into dist/
 ```
 
-Then drag `.evtx` files onto the page and select an analysis plugin from the sidebar.
+The Rust side is a thin wrapper in [`wasm/src/lib.rs`](wasm/src/lib.rs); everything else is Vue 3 + TypeScript:
 
-## Build
+- `src/core` — record normalization, the event store (dedupe, integrity checks), time zone handling, CSV
+- `src/parser` — the Web Worker that runs the WebAssembly parser
+- `src/plugins` — one folder per analysis module
+- `src/components` — UI (tables use TanStack Table + Virtual, charts use ECharts)
 
-```bash
-npm install
-npm run build    # outputs to docs/
-```
+## Deployment
 
-## Tech Stack
+`.github/workflows/pages.yml` builds the WebAssembly parser, type-checks, runs the tests, builds the site and deploys `dist/` to GitHub Pages on every push to `main`. In the repository settings, **Pages → Build and deployment → Source** must be set to **GitHub Actions**.
 
-- Vue 3 + TypeScript
-- [@ts-evtx/core](https://github.com/NickSmet/ts-evtx) — EVTX binary parser
-- Bootstrap 5, ECharts, Day.js
-- Vite
+## Credits
 
-## Links
-
-- Original Glossy: [github.com/whatabeautifulmemory/glossy](https://github.com/whatabeautifulmemory/glossy)
-- Research paper (Korean): [Link](https://github.com/whatabeautifulmemory/glossy/files/13562844/KDFS.2017.v0.1.pdf)
+- Original Glossy and the KDFS 2017 analysis: [whatabeautifulmemory/glossy](https://github.com/whatabeautifulmemory/glossy)
+- EVTX parsing: [omerbenamram/evtx](https://github.com/omerbenamram/evtx) (MIT/Apache-2.0); test fixtures are derived from its samples (see `tests/fixtures/README.md`)
