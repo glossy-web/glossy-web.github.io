@@ -47,11 +47,11 @@ function parts(ts: number, zone: string): Parts {
 
 const ms = (ts: number) => String(((ts % 1000) + 1000) % 1000).padStart(3, '0');
 
-/** "YYYY-MM-DD HH:mm:ss.SSS" in the given zone. */
+/** "YYYY-MM-DD HH:mm:ss.SSS +09:00": time in the given zone and its offset from UTC at that instant. */
 export function formatTime(ts: number, zone: string): string {
   if (!Number.isFinite(ts)) return '';
   const p = parts(ts, zone);
-  return `${p.date} ${p.time}.${ms(ts)}`;
+  return `${p.date} ${p.time}.${ms(ts)} ${p.offset}`;
 }
 
 /** ISO 8601 with the zone's offset, e.g. "2024-05-01T09:30:00.123+09:00" (for exports). */

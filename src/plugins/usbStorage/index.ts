@@ -142,9 +142,9 @@ const deviceColumns: Column<DeviceSummary>[] = [
   { id: 'capacity', label: 'Capacity', kind: 'number', value: r => (Number.isFinite(r.capacity) ? r.capacity : -1), text: r => formatBytes(r.capacity), size: 90 },
   text('volumeSerials', 'Volume serials', r => r.volumeSerials, { size: 180, kind: 'mono' }),
   text('computer', 'Computer', r => r.computer, { size: 150, facet: true }),
-  { id: 'firstSeen', label: 'First seen', kind: 'time', value: r => r.firstSeen, size: 190 },
-  { id: 'lastConnected', label: 'Last connected', kind: 'time', value: r => r.lastConnected, size: 190 },
-  { id: 'lastDisconnected', label: 'Last disconnected', kind: 'time', value: r => r.lastDisconnected, size: 190 },
+  { id: 'firstSeen', label: 'First seen', kind: 'time', value: r => r.firstSeen, size: 230 },
+  { id: 'lastConnected', label: 'Last connected', kind: 'time', value: r => r.lastConnected, size: 230 },
+  { id: 'lastDisconnected', label: 'Last disconnected', kind: 'time', value: r => r.lastDisconnected, size: 230 },
   { id: 'connections', label: 'Connections', kind: 'number', value: r => r.connections, size: 100 },
   text('users', 'Users (inferred)', r => r.users, { size: 200 }),
 ];

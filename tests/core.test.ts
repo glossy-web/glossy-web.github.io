@@ -9,10 +9,15 @@ import { profiles, settingNumber } from '@/plugins/firewall';
 describe('time', () => {
   const ts = Date.UTC(2024, 4, 1, 0, 30, 5, 123);
   it('formats in UTC and in a named zone with its offset', () => {
-    expect(formatTime(ts, 'UTC')).toBe('2024-05-01 00:30:05.123');
-    expect(formatTime(ts, 'Asia/Seoul')).toBe('2024-05-01 09:30:05.123');
+    expect(formatTime(ts, 'UTC')).toBe('2024-05-01 00:30:05.123 +00:00');
+    expect(formatTime(ts, 'Asia/Seoul')).toBe('2024-05-01 09:30:05.123 +09:00');
     expect(formatIso(ts, 'UTC')).toBe('2024-05-01T00:30:05.123Z');
     expect(formatIso(ts, 'Asia/Seoul')).toBe('2024-05-01T09:30:05.123+09:00');
+  });
+  it('gives each time the offset in force at that instant', () => {
+    expect(formatTime(Date.UTC(2024, 0, 15, 12), 'America/New_York')).toBe('2024-01-15 07:00:00.000 -05:00');
+    expect(formatTime(Date.UTC(2024, 6, 15, 12), 'America/New_York')).toBe('2024-07-15 08:00:00.000 -04:00');
+    expect(formatTime(Date.UTC(2024, 0, 15, 12), 'Asia/Kolkata')).toBe('2024-01-15 17:30:00.000 +05:30');
   });
   it('formats durations and FILETIMEs', () => {
     expect(formatDuration(90061000)).toBe('1d 1h 01m 01s');

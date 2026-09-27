@@ -161,11 +161,11 @@ interface TaskSummary {
 const taskColumns: Column<TaskSummary>[] = [
   text('name', 'Task', r => r.name, { size: 320 }),
   text('computer', 'Computer', r => r.computer, { size: 150, facet: true }),
-  { id: 'created', label: 'Registered', kind: 'time', value: r => r.created, size: 190 },
-  { id: 'updated', label: 'Last updated', kind: 'time', value: r => r.updated, size: 190 },
-  { id: 'deleted', label: 'Deleted', kind: 'time', value: r => r.deleted, size: 190, tone: r => (Number.isFinite(r.deleted) ? 'warning' : undefined) },
+  { id: 'created', label: 'Registered', kind: 'time', value: r => r.created, size: 230 },
+  { id: 'updated', label: 'Last updated', kind: 'time', value: r => r.updated, size: 230 },
+  { id: 'deleted', label: 'Deleted', kind: 'time', value: r => r.deleted, size: 230, tone: r => (Number.isFinite(r.deleted) ? 'warning' : undefined) },
   { id: 'runs', label: 'Runs', kind: 'number', value: r => r.runs, size: 70 },
-  { id: 'lastRun', label: 'Last run', kind: 'time', value: r => r.lastRun, size: 190 },
+  { id: 'lastRun', label: 'Last run', kind: 'time', value: r => r.lastRun, size: 230 },
   text('commands', 'Commands', r => r.commands, { size: 380, kind: 'mono' }),
 ];
 

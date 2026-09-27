@@ -44,8 +44,8 @@
               <th class="text-end">Records</th>
               <th>Computers</th>
               <th>Channels</th>
-              <th>First ({{ zoneShort }})</th>
-              <th>Last ({{ zoneShort }})</th>
+              <th>First</th>
+              <th>Last</th>
               <th>Header</th>
               <th class="text-end" title="Missing record numbers between the first and last record in the file">Missing</th>
               <th class="text-end">Errors</th>
@@ -124,14 +124,13 @@ import type { SourceFile } from '@/core/evtx/types';
 import type { Note, Stat } from '@/core/plugin';
 import { eventStore } from '@/core/store';
 import { KEY_CHANNELS } from '@/core/settings';
-import { formatTime, UTC } from '@/core/time';
+import { formatTime, offsetLabel } from '@/core/time';
 import { formatBytes } from '@/core/format';
 import { loader, type FileProgress } from '@/composables/useFileLoader';
 import DashboardPanel from './DashboardPanel.vue';
 
 const props = defineProps<{ zone: string }>();
 
-const zoneShort = computed(() => (props.zone === UTC ? 'UTC' : props.zone));
 const sources = computed(() => {
   void eventStore.version.value;
   return [...eventStore.sources];
@@ -148,8 +147,8 @@ const stats = computed<Stat[]>(() => {
     { label: 'Files', value: list.length },
     { label: 'Computers', value: computers.size },
     { label: 'Channels', value: eventStore.channels().length },
-    ...(Number.isFinite(first) ? [{ label: `Earliest (${zoneShort.value})`, value: formatTime(first, props.zone).slice(0, 19) }] : []),
-    ...(Number.isFinite(last) ? [{ label: `Latest (${zoneShort.value})`, value: formatTime(last, props.zone).slice(0, 19) }] : []),
+    ...(Number.isFinite(first) ? [{ label: `Earliest (${offsetLabel(props.zone, first)})`, value: formatTime(first, props.zone).slice(0, 19) }] : []),
+    ...(Number.isFinite(last) ? [{ label: `Latest (${offsetLabel(props.zone, last)})`, value: formatTime(last, props.zone).slice(0, 19) }] : []),
   ];
 });
 

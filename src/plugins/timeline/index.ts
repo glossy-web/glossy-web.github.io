@@ -94,8 +94,8 @@ const entityColumns: Column<EntityRow>[] = [
   text('value', 'Value', r => r.value, { size: 280 }),
   { id: 'highlighted', label: 'Highlighted', kind: 'number', value: r => r.highlighted, size: 100, tone: r => (r.highlighted ? 'warning' : undefined) },
   { id: 'entries', label: 'Entries', kind: 'number', value: r => r.entries, size: 90 },
-  { id: 'first', label: 'First seen', kind: 'time', value: r => r.first, size: 190 },
-  { id: 'last', label: 'Last seen', kind: 'time', value: r => r.last, size: 190 },
+  { id: 'first', label: 'First seen', kind: 'time', value: r => r.first, size: 230 },
+  { id: 'last', label: 'Last seen', kind: 'time', value: r => r.last, size: 230 },
   text('modules', 'Modules', r => r.modules, { size: 360 }),
 ];
 

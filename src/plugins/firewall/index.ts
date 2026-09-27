@@ -147,7 +147,7 @@ const ruleColumns: Column<RuleState>[] = [
   text('ports', 'Ports', r => r.ports, { size: 160 }),
   text('program', 'Program / service', r => r.program, { size: 300 }),
   text('profiles', 'Profiles', r => r.profiles, { size: 130 }),
-  { id: 'lastChange', label: 'Last change', kind: 'time', value: r => r.lastChange, size: 190 },
+  { id: 'lastChange', label: 'Last change', kind: 'time', value: r => r.lastChange, size: 230 },
   text('by', 'Changed by', r => r.by, { size: 260 }),
 ];
 

@@ -129,8 +129,8 @@ interface ImageSummary {
 const imageColumns: Column<ImageSummary>[] = [
   text('image', 'Executable', r => r.image, { size: 380, tone: r => (isUserWritablePath(r.image) ? 'warning' : undefined) }),
   { id: 'count', label: 'Executions', kind: 'number', value: r => r.count, size: 100 },
-  { id: 'first', label: 'First', kind: 'time', value: r => r.first, size: 190 },
-  { id: 'last', label: 'Last', kind: 'time', value: r => r.last, size: 190 },
+  { id: 'first', label: 'First', kind: 'time', value: r => r.first, size: 230 },
+  { id: 'last', label: 'Last', kind: 'time', value: r => r.last, size: 230 },
   text('users', 'Users', r => r.users, { size: 220 }),
   text('parents', 'Parents', r => r.parents, { size: 320 }),
 ];

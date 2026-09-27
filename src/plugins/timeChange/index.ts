@@ -47,8 +47,8 @@ const deltaTone = (r: TimeRow): Tone | undefined => (Math.abs(r.delta) >= 360000
 
 const eventColumns: Column<TimeRow>[] = withBase<TimeRow>([
   text('source', 'Source', r => r.source, { size: 190, facet: true }),
-  { id: 'previous', label: 'Previous time', kind: 'time', value: r => r.previous, size: 190 },
-  { id: 'next', label: 'New time', kind: 'time', value: r => r.next, size: 190 },
+  { id: 'previous', label: 'Previous time', kind: 'time', value: r => r.previous, size: 230 },
+  { id: 'next', label: 'New time', kind: 'time', value: r => r.next, size: 230 },
   {
     id: 'delta',
     label: 'Change',

@@ -108,13 +108,13 @@ interface ServiceSummary {
 const summaryColumns: Column<ServiceSummary>[] = [
   text('service', 'Service', r => r.service, { size: 220 }),
   text('computer', 'Computer', r => r.computer, { size: 150, facet: true }),
-  { id: 'installed', label: 'Installed', kind: 'time', value: r => r.installed, size: 190 },
+  { id: 'installed', label: 'Installed', kind: 'time', value: r => r.installed, size: 230 },
   text('image', 'Image path', r => r.image, { size: 380, kind: 'mono' }),
   text('flags', 'Flags', r => r.flags, { size: 160, facet: true, tone: r => (r.flags ? 'danger' : undefined) }),
   text('account', 'Account', r => r.account, { size: 150 }),
   text('startType', 'Start type', r => r.startType, { size: 120, facet: true }),
   text('lastState', 'Last state', r => r.lastState, { size: 100, facet: true }),
-  { id: 'lastStateAt', label: 'State since', kind: 'time', value: r => r.lastStateAt, size: 190 },
+  { id: 'lastStateAt', label: 'State since', kind: 'time', value: r => r.lastStateAt, size: 230 },
   { id: 'crashes', label: 'Crashes', kind: 'number', value: r => r.crashes, size: 80 },
 ];
 

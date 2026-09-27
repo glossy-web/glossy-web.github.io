@@ -31,7 +31,7 @@
           </template>
           <table class="table table-sm kv mb-3">
             <tbody>
-              <tr><th>Time ({{ zoneLabel }})</th><td class="tabular">{{ formatTime(event.ts, zone) }}</td></tr>
+              <tr><th>Time ({{ zone }})</th><td class="tabular">{{ formatTime(event.ts, zone) }}</td></tr>
               <tr><th>SystemTime (UTC)</th><td class="font-monospace">{{ event.time }}</td></tr>
               <tr><th>Provider</th><td>{{ event.provider }}</td></tr>
               <tr><th>Event ID</th><td>{{ event.eventId }}<span v-if="event.qualifiers !== null" class="text-body-secondary"> (Qualifiers {{ event.qualifiers }})</span></td></tr>
@@ -88,7 +88,7 @@ import { computed, nextTick, onMounted, ref } from 'vue';
 import type { EvtxEvent } from '@/core/evtx/types';
 import type { RowDetail } from '@/core/plugin';
 import { levelName } from '@/core/evtx/types';
-import { formatTime, offsetLabel, UTC } from '@/core/time';
+import { formatTime } from '@/core/time';
 import { eventStore } from '@/core/store';
 import { createContext } from '@/core/context';
 import { renderXml } from '@/composables/useFileLoader';
@@ -109,7 +109,6 @@ const xmlState = ref<'idle' | 'loading' | 'ready' | 'failed'>('idle');
 
 const source = computed(() => eventStore.sources.find(s => s.index === props.event.src));
 const sidName = computed(() => createContext(eventStore).sidName(props.event.userSid));
-const zoneLabel = computed(() => (props.zone === UTC ? 'UTC' : `${props.zone}, ${offsetLabel(props.zone, props.event.ts)}`));
 const levelClass = computed(() => {
   const l = props.event.level;
   if (l === 1 || l === 2) return 'text-bg-danger';

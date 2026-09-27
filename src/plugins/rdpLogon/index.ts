@@ -122,8 +122,8 @@ interface SourceRow {
 const sourceColumns: Column<SourceRow>[] = [
   text('address', 'Source address', r => r.address, { size: 160 }),
   text('scope', 'Scope', r => r.scope, { size: 90, facet: true, tone: r => (r.scope === 'public' ? 'warning' : undefined) }),
-  { id: 'first', label: 'First seen', kind: 'time', value: r => r.first, size: 190 },
-  { id: 'last', label: 'Last seen', kind: 'time', value: r => r.last, size: 190 },
+  { id: 'first', label: 'First seen', kind: 'time', value: r => r.first, size: 230 },
+  { id: 'last', label: 'Last seen', kind: 'time', value: r => r.last, size: 230 },
   { id: 'auth', label: 'Authenticated (1149)', kind: 'number', value: r => r.auth, size: 130 },
   { id: 'logons', label: 'Session logons', kind: 'number', value: r => r.logons, size: 120 },
   { id: 'failures', label: 'Failures', kind: 'number', value: r => r.failures, size: 90, tone: r => (r.failures ? 'danger' : undefined) },
@@ -140,7 +140,7 @@ interface SessionRow extends EventRow {
 }
 
 const sessionColumns: Column<SessionRow>[] = withBase<SessionRow>([
-  { id: 'end', label: 'Logoff', kind: 'time', value: r => r.end?.ts ?? NaN, size: 190 },
+  { id: 'end', label: 'Logoff', kind: 'time', value: r => r.end?.ts ?? NaN, size: 230 },
   { id: 'duration', label: 'Duration', kind: 'number', value: r => (r.end ? r.end.ts - r.event.ts : NaN), text: r => (r.end ? formatDuration(r.end.ts - r.event.ts) : 'no logoff recorded'), size: 140 },
   text('user', 'Account', r => r.user, { size: 190 }),
   text('address', 'Address', r => r.address, { size: 140 }),
