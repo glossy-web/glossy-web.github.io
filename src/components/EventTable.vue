@@ -6,8 +6,18 @@
         <Input v-model="search" type="search" class="pl-7" placeholder="Search all columns" aria-label="Search all columns" />
       </div>
       <span class="text-muted-foreground text-xs tabular-nums">{{ rows.length.toLocaleString() }} of {{ view.rows.length.toLocaleString() }} rows</span>
-      <Button v-if="hasFilters" variant="ghost" size="sm" @click="clearFilters"><FilterXIcon />Clear filters</Button>
       <div class="ml-auto flex items-center gap-1.5">
+        <Button
+          v-if="timeColumn"
+          variant="outline"
+          size="icon"
+          :aria-pressed="layout.histogram"
+          :class="{ 'bg-muted': layout.histogram }"
+          :title="layout.histogram ? 'Hide histogram' : 'Show histogram'"
+          @click="layout.histogram = !layout.histogram"
+        >
+          <ChartColumnIcon />
+        </Button>
         <DropdownMenu>
           <DropdownMenuTrigger as-child>
             <Button variant="outline"><Columns3Icon />Columns</Button>
@@ -22,101 +32,190 @@
             >
               {{ labelOf(col.id) }}
             </DropdownMenuCheckboxItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem @select="resetLayout"><RotateCcwIcon />Reset columns</DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
         <Button variant="outline" :disabled="rows.length === 0" title="CSV in the selected time zone" @click="exportCsv"><DownloadIcon />CSV</Button>
-        <Button variant="outline" :disabled="rows.length === 0 || !timeColumns.length" title="Timesketch JSONL (UTC)" @click="exportJsonl"><DownloadIcon />JSONL</Button>
+        <Button variant="outline" :disabled="rows.length === 0 || !timeColumn" title="Timesketch JSONL (UTC)" @click="exportJsonl"><DownloadIcon />JSONL</Button>
       </div>
     </div>
 
-    <div ref="scroller" class="bg-card min-h-60 flex-1 basis-0 overflow-auto rounded-lg border">
-      <table class="w-full table-fixed border-separate border-spacing-0 text-xs" :style="{ minWidth: totalWidth + 'px' }">
-        <colgroup>
-          <col v-for="col in visibleColumns" :key="col.id" :style="{ width: (defs[col.id]?.size ?? 160) + 'px' }" />
-        </colgroup>
-        <thead class="bg-muted sticky top-0 z-10">
-          <tr>
-            <th
-              v-for="col in visibleColumns"
-              :key="col.id"
-              scope="col"
-              class="h-7 border-b px-1.5 text-left font-medium whitespace-nowrap"
-              :class="{ 'text-right': defs[col.id]?.kind === 'number' }"
-              :aria-sort="ariaSort(col.getIsSorted())"
-            >
-              <button
-                type="button"
-                class="focus-visible:ring-ring/50 flex w-full items-center gap-1 overflow-hidden rounded-sm text-ellipsis outline-none focus-visible:ring-2"
-                :class="{ 'justify-end': defs[col.id]?.kind === 'number' }"
-                @click="col.toggleSorting(undefined, false)"
+    <FilterChips :chips="chips" @remove="removeChip" @negate="negateChip" @clear="clearFilters" />
+
+    <TableHistogram
+      v-if="timeColumn && layout.histogram && view.rows.length"
+      :times="histogramTimes"
+      :zone="zone"
+      :range="timeRange"
+      @select="r => setFilter(timeColumn!.id, { kind: 'range', from: r.from, to: r.to })"
+    />
+
+    <ContextMenu @update:open="(o: boolean) => !o && (menu = null)">
+      <ContextMenuTrigger as-child>
+        <div ref="scroller" class="bg-card min-h-60 flex-1 basis-0 overflow-auto rounded-lg border" @contextmenu="onContextMenu">
+          <table class="table-fixed border-separate border-spacing-0 text-xs" :style="{ width: table.getTotalSize() + 'px', minWidth: '100%' }">
+            <colgroup>
+              <col v-for="h in headers" :key="h.id" :style="{ width: h.getSize() + 'px' }" />
+            </colgroup>
+            <thead class="sticky top-0 z-20">
+              <tr>
+                <th
+                  v-for="h in headers"
+                  :key="h.id"
+                  scope="col"
+                  class="bg-muted group/th relative h-7 border-b px-1.5 text-left font-medium whitespace-nowrap"
+                  :class="{ 'z-10': isPinned(h), 'ring-primary ring-2 ring-inset': dragOver === h.id }"
+                  :style="pinStyle(h)"
+                  :aria-sort="ariaSort(h.column.getIsSorted())"
+                  @dragover.prevent="dragOver = h.id"
+                  @dragleave="dragOver = dragOver === h.id ? null : dragOver"
+                  @drop.prevent="onDrop(h.id)"
+                  @dragend="dragOver = null"
+                >
+                  <!-- Only the title area drags (to reorder), so the resize handle next to it never starts a drag. -->
+                  <div
+                    class="flex cursor-grab items-center gap-0.5 active:cursor-grabbing"
+                    :class="{ 'flex-row-reverse': defs[h.id]?.kind === 'number' }"
+                    draggable="true"
+                    @dragstart="e => onDragStart(e, h.id)"
+                  >
+                    <button
+                      type="button"
+                      class="focus-visible:ring-ring/50 flex min-w-0 items-center gap-1 rounded-sm outline-none focus-visible:ring-2"
+                      :title="`Sort by ${labelOf(h.id)}`"
+                      @click="h.column.toggleSorting(undefined, false)"
+                    >
+                      <PinIcon v-if="isPinned(h)" class="text-muted-foreground size-3 shrink-0" />
+                      <span class="truncate">{{ labelOf(h.id) }}</span>
+                      <ArrowUpIcon v-if="h.column.getIsSorted() === 'asc'" class="size-3 shrink-0" />
+                      <ArrowDownIcon v-else-if="h.column.getIsSorted() === 'desc'" class="size-3 shrink-0" />
+                    </button>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger as-child>
+                        <button
+                          type="button"
+                          class="text-muted-foreground hover:bg-background data-[state=open]:bg-background shrink-0 rounded-sm p-0.5 opacity-0 group-hover/th:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100"
+                          :aria-label="`${labelOf(h.id)} column menu`"
+                        >
+                          <ChevronDownIcon class="size-3" />
+                        </button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="start" class="w-44">
+                        <DropdownMenuItem @select="h.column.toggleSorting(false)"><ArrowUpIcon />Sort ascending</DropdownMenuItem>
+                        <DropdownMenuItem @select="h.column.toggleSorting(true)"><ArrowDownIcon />Sort descending</DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem v-if="isPinned(h)" @select="h.column.pin(false)"><PinOffIcon />Unpin</DropdownMenuItem>
+                        <DropdownMenuItem v-else @select="h.column.pin('start')"><PinIcon />Pin to left</DropdownMenuItem>
+                        <DropdownMenuItem @select="h.column.resetSize()"><MoveHorizontalIcon />Reset width</DropdownMenuItem>
+                        <DropdownMenuItem @select="h.column.toggleVisibility(false)"><EyeOffIcon />Hide column</DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
+                  <div
+                    class="hover:bg-primary/60 absolute top-0 right-0 z-10 h-full w-1.5 cursor-col-resize touch-none select-none"
+                    :class="{ 'bg-primary': h.column.getIsResizing() }"
+                    aria-hidden="true"
+                    @mousedown.stop.prevent="h.getResizeHandler()($event)"
+                    @touchstart.stop="h.getResizeHandler()($event)"
+                    @click.stop
+                    @dblclick.stop="h.column.resetSize()"
+                  ></div>
+                </th>
+              </tr>
+              <tr>
+                <th
+                  v-for="h in headers"
+                  :key="h.id"
+                  class="bg-muted border-b px-1 pb-1 font-normal"
+                  :class="{ 'z-10': isPinned(h) }"
+                  :style="pinStyle(h)"
+                >
+                  <TimeRangeFilter
+                    v-if="defs[h.id]?.kind === 'time'"
+                    :label="labelOf(h.id)"
+                    :zone="zone"
+                    :model-value="rangeOf(h.column.getFilterValue())"
+                    @update:model-value="v => setFilter(h.id, v)"
+                  />
+                  <ValuesFilter
+                    v-else-if="defs[h.id]?.facet || valuesOf(h.column.getFilterValue())"
+                    :label="labelOf(h.id)"
+                    :model-value="valuesOf(h.column.getFilterValue())"
+                    :load="() => facetValues(h.column)"
+                    @update:model-value="v => setFilter(h.id, v)"
+                  />
+                  <Input
+                    v-else
+                    class="h-6 px-1.5 text-[11px]"
+                    :model-value="textOf(h.column.getFilterValue())?.text ?? ''"
+                    placeholder="contains…"
+                    :aria-label="`Filter ${labelOf(h.id)}`"
+                    @update:model-value="(v: string | number) => setFilter(h.id, v === '' ? undefined : { kind: 'text', text: String(v), exclude: textOf(h.column.getFilterValue())?.exclude })"
+                  />
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-if="padTop > 0" aria-hidden="true"><td :colspan="headers.length" :style="{ height: padTop + 'px', padding: 0, border: 0 }"></td></tr>
+              <tr
+                v-for="item in virtualItems"
+                :key="String(item.key)"
+                class="group/row"
+                :class="{ 'cursor-pointer': !!(view.event || view.pivot) }"
+                @click="open(rows[item.index]!.original)"
               >
-                <span class="truncate">{{ labelOf(col.id) }}</span>
-                <ArrowUpIcon v-if="col.getIsSorted() === 'asc'" class="size-3 shrink-0" />
-                <ArrowDownIcon v-else-if="col.getIsSorted() === 'desc'" class="size-3 shrink-0" />
-              </button>
-            </th>
-          </tr>
-          <tr>
-            <th v-for="col in visibleColumns" :key="col.id" class="border-b px-1 pb-1 font-normal">
-              <NativeSelect
-                v-if="defs[col.id]?.facet"
-                size="sm"
-                class="w-full"
-                :model-value="(col.getFilterValue() as string) ?? ''"
-                :aria-label="`Filter ${labelOf(col.id)}`"
-                @focus="facetOpen[col.id] = true"
-                @update:model-value="(v: unknown) => col.setFilterValue(v ? String(v) : undefined)"
-              >
-                <option value="">All</option>
-                <option v-for="[value, count] in facetValues(col)" :key="value" :value="value">
-                  {{ value === '' ? '(empty)' : value }}{{ Number.isNaN(count) ? '' : ` (${count})` }}
-                </option>
-              </NativeSelect>
-              <Input
-                v-else
-                class="h-6 px-1.5 text-[11px]"
-                :model-value="(col.getFilterValue() as string) ?? ''"
-                :placeholder="defs[col.id]?.kind === 'time' ? 'YYYY-MM-DD…' : 'contains…'"
-                :aria-label="`Filter ${labelOf(col.id)}`"
-                @update:model-value="(v: string | number) => col.setFilterValue(v === '' ? undefined : String(v))"
-              />
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-if="padTop > 0" aria-hidden="true"><td :colspan="visibleColumns.length" :style="{ height: padTop + 'px', padding: 0, border: 0 }"></td></tr>
-          <tr
-            v-for="item in virtualItems"
-            :key="String(item.key)"
-            class="hover:bg-muted/60"
-            :class="{ 'cursor-pointer': !!(view.event || view.pivot) }"
-            @click="open(rows[item.index]!.original)"
-          >
-            <td
-              v-for="col in visibleColumns"
-              :key="col.id"
-              class="h-[26px] truncate border-b px-1.5"
-              :class="cellClass(rows[item.index]!.original, col.id)"
-              :title="cellText(rows[item.index]!.original, col.id)"
-            >{{ cellText(rows[item.index]!.original, col.id) }}</td>
-          </tr>
-          <tr v-if="padBottom > 0" aria-hidden="true"><td :colspan="visibleColumns.length" :style="{ height: padBottom + 'px', padding: 0, border: 0 }"></td></tr>
-          <tr v-if="rows.length === 0">
-            <td :colspan="visibleColumns.length" class="text-muted-foreground py-6 text-center">
-              {{ view.rows.length === 0 ? 'No matching events in the loaded logs.' : 'No rows match the current filters.' }}
-            </td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
+                <td
+                  v-for="h in headers"
+                  :key="h.id"
+                  :data-row="item.index"
+                  :data-col="h.id"
+                  class="bg-card group-hover/row:bg-muted h-[26px] truncate border-b px-1.5"
+                  :class="[cellClass(rows[item.index]!.original, h.id), { 'z-10': isPinned(h) }]"
+                  :style="pinStyle(h)"
+                  :title="cellText(rows[item.index]!.original, h.id)"
+                >{{ cellText(rows[item.index]!.original, h.id) }}</td>
+              </tr>
+              <tr v-if="padBottom > 0" aria-hidden="true"><td :colspan="headers.length" :style="{ height: padBottom + 'px', padding: 0, border: 0 }"></td></tr>
+              <tr v-if="rows.length === 0">
+                <td :colspan="headers.length" class="text-muted-foreground py-6 text-center">
+                  {{ view.rows.length === 0 ? 'No matching events in the loaded logs.' : 'No rows match the current filters.' }}
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </ContextMenuTrigger>
+      <ContextMenuContent v-if="menu" class="w-64">
+        <template v-if="menu.col.kind === 'time'">
+          <ContextMenuItem :disabled="!Number.isFinite(menu.value)" @select="setRangeEdge('from')"><ArrowRightFromLineIcon />Show from this time</ContextMenuItem>
+          <ContextMenuItem :disabled="!Number.isFinite(menu.value)" @select="setRangeEdge('to')"><ArrowLeftToLineIcon />Show until this time</ContextMenuItem>
+        </template>
+        <template v-else>
+          <ContextMenuItem @select="setFilter(menu.col.id, filterFor(menuValue))"><FilterIcon /><span class="truncate">Filter for “{{ menuLabel }}”</span></ContextMenuItem>
+          <ContextMenuItem @select="setFilter(menu.col.id, filterOut(currentFilter(menu.col.id), menuValue))"><FilterXIcon /><span class="truncate">Filter out “{{ menuLabel }}”</span></ContextMenuItem>
+        </template>
+        <ContextMenuSeparator />
+        <ContextMenuItem @select="copy(menu.text, 'Value')"><CopyIcon />Copy value</ContextMenuItem>
+        <ContextMenuItem @select="copyRow(menu.row)"><ClipboardListIcon />Copy row</ContextMenuItem>
+        <template v-if="view.event?.(menu.row)">
+          <ContextMenuSeparator />
+          <ContextMenuItem @select="open(menu.row)"><SquareArrowOutUpRightIcon />Open record</ContextMenuItem>
+        </template>
+      </ContextMenuContent>
+    </ContextMenu>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, markRaw, reactive, ref, watch } from 'vue';
+import { computed, markRaw, ref, watch, type CSSProperties } from 'vue';
 import {
   columnFacetingFeature,
   columnFilteringFeature,
+  columnOrderingFeature,
+  columnPinningFeature,
+  columnResizingFeature,
+  columnSizingFeature,
   columnVisibilityFeature,
   createFacetedRowModel,
   createFacetedUniqueValues,
@@ -128,20 +227,49 @@ import {
   useTable,
 } from '@tanstack/vue-table';
 import { useVirtualizer } from '@tanstack/vue-virtual';
+import { useStorage } from '@vueuse/core';
 import { toast } from 'vue-sonner';
-import { ArrowDownIcon, ArrowUpIcon, Columns3Icon, DownloadIcon, FilterXIcon, SearchIcon } from '@lucide/vue';
+import {
+  ArrowDownIcon,
+  ArrowLeftToLineIcon,
+  ArrowRightFromLineIcon,
+  ArrowUpIcon,
+  ChartColumnIcon,
+  ChevronDownIcon,
+  ClipboardListIcon,
+  Columns3Icon,
+  CopyIcon,
+  DownloadIcon,
+  EyeOffIcon,
+  FilterIcon,
+  FilterXIcon,
+  MoveHorizontalIcon,
+  PinIcon,
+  PinOffIcon,
+  RotateCcwIcon,
+  SearchIcon,
+  SquareArrowOutUpRightIcon,
+} from '@lucide/vue';
 import { Button } from '@/components/ui/button';
-import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuTrigger } from '@/components/ui/context-menu';
+import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
-import { NativeSelect } from '@/components/ui/native-select';
 import type { Column, Pivot, RowDetail, Tone, View } from '@/core/plugin';
 import type { EvtxEvent } from '@/core/evtx/types';
 import { download } from '@/core/csv';
-import { cellText as textOf, tableToCsv, tableToJsonl, type TableSnapshot } from '@/core/tableExport';
+import { cellText as displayText, tableToCsv, tableToJsonl, type TableSnapshot } from '@/core/tableExport';
+import { describe, filterFor, filterOut, negate, passes, type ColumnFilter } from '@/core/tableFilter';
 import { eventStore } from '@/core/store';
+import FilterChips, { type Chip } from './table/FilterChips.vue';
+import TableHistogram from './table/TableHistogram.vue';
+import TimeRangeFilter from './table/TimeRangeFilter.vue';
+import ValuesFilter from './table/ValuesFilter.vue';
 
 type Row = any; // rows are plugin-defined objects
 type AnyColumn = Column<Row>;
+/* TanStack's column and header objects, as used by the template. */
+type TColumn = any;
+type THeader = any;
 
 const props = defineProps<{
   view: View<Row>;
@@ -163,10 +291,11 @@ const TONE: Record<Tone, string> = {
 
 const defs = computed<Record<string, AnyColumn>>(() => Object.fromEntries(props.view.columns.map(c => [c.id, c])));
 const labelOf = (id: string) => defs.value[id]?.label ?? id;
+const timeColumn = computed(() => props.view.columns.find(c => c.kind === 'time'));
 
 const cellText = (row: Row, id: string) => {
   const col = defs.value[id];
-  return col ? textOf(row, col, props.zone) : '';
+  return col ? displayText(row, col, props.zone) : '';
 };
 
 function cellClass(row: Row, id: string): string[] {
@@ -181,18 +310,40 @@ function cellClass(row: Row, id: string): string[] {
   return classes;
 }
 
-/** Column filter: exact value for pick-list columns, case-insensitive substring otherwise. */
+// ---------------------------------------------------------------- column layout, remembered per view
+
+interface Layout {
+  order: string[];
+  sizing: Record<string, number>;
+  pinned: string[];
+  /** Hidden column ids once the analyst changed visibility; null keeps the view's defaults. */
+  hidden: string[] | null;
+  histogram: boolean;
+}
+
+const layout = useStorage<Layout>(
+  `glossy.table.${props.exportName}`,
+  { order: [], sizing: {}, pinned: [], hidden: null, histogram: true },
+  localStorage,
+  { mergeDefaults: true },
+);
+
+const ids = props.view.columns.map(c => c.id);
+const known = (list: string[]) => list.filter(id => ids.includes(id));
+
+// ---------------------------------------------------------------- table
+
 const columnFilter = (row: { original: Row }, columnId: string, filterValue: unknown) => {
   const col = defs.value[columnId];
+  const filter = filterValue as ColumnFilter;
   if (!col) return true;
-  if (col.facet) return String(col.value(row.original) ?? '') === String(filterValue);
-  return textOf(row.original, col, props.zone).toLowerCase().includes(String(filterValue ?? '').toLowerCase());
+  return passes(filter, col.value(row.original), filter.kind === 'text' ? displayText(row.original, col, props.zone) : '');
 };
 
 /** Search box: case-insensitive substring in any searchable column. */
 const searchFilter = (row: { original: Row }, columnId: string, filterValue: unknown) => {
   const col = defs.value[columnId];
-  return !!col && textOf(row.original, col, props.zone).toLowerCase().includes(String(filterValue ?? '').toLowerCase());
+  return !!col && displayText(row.original, col, props.zone).toLowerCase().includes(String(filterValue ?? '').toLowerCase());
 };
 
 const compare = (a: { original: Row }, b: { original: Row }, columnId: string) => {
@@ -212,6 +363,10 @@ const features = tableFeatures({
   rowSortingFeature,
   columnFacetingFeature,
   columnVisibilityFeature,
+  columnOrderingFeature,
+  columnPinningFeature,
+  columnSizingFeature,
+  columnResizingFeature,
   filteredRowModel: createFilteredRowModel(),
   sortedRowModel: createSortedRowModel(),
   facetedRowModel: createFacetedRowModel(),
@@ -225,6 +380,14 @@ const columns = props.view.columns.map(c => ({
   filterFn: columnFilter,
   sortFn: compare,
   sortUndefined: 'last' as const,
+  size: c.size ?? 160,
+  minSize: 50,
+}));
+
+/** Pivot presets: pick-list columns match the value exactly, others contain it. */
+const presetFilters = Object.entries(props.filters ?? {}).map(([id, value]) => ({
+  id,
+  value: (defs.value[id]?.facet ? { kind: 'values', values: [value] } : { kind: 'text', text: value }) as ColumnFilter,
 }));
 
 const data = computed(() => markRaw(props.view.rows));
@@ -236,38 +399,110 @@ watch(search, v => {
   timer = setTimeout(() => (debounced.value = v.trim()), 200);
 });
 
+const defaultVisibility = () => Object.fromEntries(props.view.columns.filter(c => c.hidden).map(c => [c.id, false]));
+
 const table = useTable({
   features,
   columns: columns as never,
   data: data as never,
   initialState: {
     sorting: [{ id: props.view.sort?.id ?? props.view.columns[0]?.id ?? '', desc: props.view.sort?.desc ?? false }],
-    columnVisibility: Object.fromEntries(props.view.columns.filter(c => c.hidden).map(c => [c.id, false])),
-    columnFilters: Object.entries(props.filters ?? {}).map(([id, value]) => ({ id, value })),
+    columnVisibility: layout.value.hidden ? Object.fromEntries(ids.map(id => [id, !layout.value.hidden!.includes(id)])) : defaultVisibility(),
+    columnFilters: presetFilters,
+    columnOrder: known(layout.value.order),
+    columnSizing: Object.fromEntries(Object.entries(layout.value.sizing).filter(([id]) => ids.includes(id))),
+    columnPinning: { start: known(layout.value.pinned), end: [] },
   },
   enableSortingRemoval: false,
+  columnResizeMode: 'onChange',
   globalFilterFn: searchFilter as never,
   getColumnCanGlobalFilter: (column: { id: string }) => defs.value[column.id]?.kind !== 'time',
 } as never) as any;
 
 watch(debounced, v => table.setGlobalFilter(v || undefined));
 
-const rows = computed(() => table.getRowModel().rows as { id: string; original: Row }[]);
-const visibleColumns = computed(() => table.getVisibleLeafColumns() as any[]);
-const totalWidth = computed(() => visibleColumns.value.reduce((w: number, c: { id: string }) => w + (defs.value[c.id]?.size ?? 160), 0));
-const hasFilters = computed(() => table.atoms.columnFilters.get().length > 0 || !!debounced.value);
+watch(
+  () => [table.atoms.columnOrder.get(), table.atoms.columnSizing.get(), table.atoms.columnPinning.get(), table.atoms.columnVisibility.get()],
+  ([order, sizing, pinning, visibility]) => {
+    const vis = visibility as Record<string, boolean>;
+    layout.value = {
+      ...layout.value,
+      order: order as string[],
+      sizing: sizing as Record<string, number>,
+      pinned: (pinning as { start: string[] }).start,
+      hidden: ids.filter(id => vis[id] === false),
+    };
+  },
+  { deep: true },
+);
 
-// Facet lists are computed only for pickers the analyst has focused.
-const facetOpen = reactive<Record<string, boolean>>({});
-function facetValues(col: { id: string; getFacetedUniqueValues: () => Map<unknown, number>; getFilterValue: () => unknown }) {
-  if (!facetOpen[col.id]) {
-    const current = col.getFilterValue();
-    return current === undefined ? [] : [[String(current), NaN] as [string, number]];
-  }
-  return [...col.getFacetedUniqueValues()]
-    .map(([v, n]) => [String(v ?? ''), n] as [string, number])
-    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
-    .slice(0, 500);
+function resetLayout() {
+  table.resetColumnOrder(true);
+  table.resetColumnSizing(true);
+  table.resetColumnPinning(true);
+  table.setColumnVisibility(defaultVisibility());
+  layout.value = { order: [], sizing: {}, pinned: [], hidden: null, histogram: layout.value.histogram };
+}
+
+const rows = computed(() => table.getRowModel().rows as { id: string; original: Row }[]);
+/** Headers in display order: pinned columns first. */
+const headers = computed<THeader[]>(() => [...table.getStartLeafHeaders(), ...table.getCenterLeafHeaders()]);
+
+const isPinned = (h: THeader) => h.column.getIsPinned() === 'start';
+const pinStyle = (h: THeader): CSSProperties | undefined => (isPinned(h) ? { position: 'sticky', left: `${h.column.getStart('start')}px` } : undefined);
+
+// Reordering by dragging headers.
+const dragId = ref<string | null>(null);
+const dragOver = ref<string | null>(null);
+function onDragStart(e: DragEvent, id: string) {
+  dragId.value = id;
+  e.dataTransfer?.setData('text/plain', id);
+  if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move';
+}
+function onDrop(target: string) {
+  const from = dragId.value;
+  dragOver.value = null;
+  dragId.value = null;
+  if (!from || from === target) return;
+  const order = table.getAllLeafColumns().map((c: TColumn) => c.id as string).filter((id: string) => id !== from);
+  order.splice(order.indexOf(target), 0, from);
+  table.setColumnOrder(order);
+}
+
+// ---------------------------------------------------------------- filters
+
+const currentFilter = (id: string) => table.getColumn(id)?.getFilterValue() as ColumnFilter | undefined;
+const setFilter = (id: string, value: ColumnFilter | undefined) => table.getColumn(id)?.setFilterValue(value);
+const rangeOf = (v: unknown) => ((v as ColumnFilter | undefined)?.kind === 'range' ? (v as Extract<ColumnFilter, { kind: 'range' }>) : undefined);
+const valuesOf = (v: unknown) => ((v as ColumnFilter | undefined)?.kind === 'values' ? (v as Extract<ColumnFilter, { kind: 'values' }>) : undefined);
+const textOf = (v: unknown) => ((v as ColumnFilter | undefined)?.kind === 'text' ? (v as Extract<ColumnFilter, { kind: 'text' }>) : undefined);
+
+/** Distinct values under the other filters, most frequent first. */
+function facetValues(col: TColumn): [string, number][] {
+  return [...(col.getFacetedUniqueValues() as Map<unknown, number>)]
+    .map(([v, n]) => [v === null || v === undefined ? '' : String(v), n] as [string, number])
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+}
+
+const chips = computed<Chip[]>(() => {
+  const out: Chip[] = (table.atoms.columnFilters.get() as { id: string; value: ColumnFilter }[]).map(f => ({
+    id: f.id,
+    text: describe(f.value, labelOf(f.id), props.zone),
+    exclude: f.value.kind !== 'range' && !!f.value.exclude,
+    negatable: f.value.kind !== 'range',
+  }));
+  if (debounced.value) out.push({ id: '__search', text: `Search: "${debounced.value}"`, negatable: false });
+  return out;
+});
+
+function removeChip(id: string) {
+  if (id === '__search') search.value = debounced.value = '';
+  else setFilter(id, undefined);
+}
+
+function negateChip(id: string) {
+  const f = currentFilter(id);
+  if (f) setFilter(id, negate(f));
 }
 
 function clearFilters() {
@@ -275,6 +510,58 @@ function clearFilters() {
   search.value = '';
   debounced.value = '';
 }
+
+const timeRange = computed(() => (timeColumn.value ? rangeOf(table.atoms.columnFilters.get().find((f: { id: string }) => f.id === timeColumn.value!.id)?.value) : undefined));
+const histogramTimes = computed(() => {
+  const col = timeColumn.value;
+  return col ? rows.value.map(r => col.value(r.original) as number) : [];
+});
+
+// ---------------------------------------------------------------- context menu
+
+const menu = ref<{ row: Row; col: AnyColumn; value: unknown; text: string } | null>(null);
+const menuValue = computed(() => (menu.value ? (menu.value.value === null || menu.value.value === undefined ? '' : String(menu.value.value)) : ''));
+const menuLabel = computed(() => {
+  const t = menu.value?.text ?? '';
+  if (!t) return '(empty)';
+  return t.length > 40 ? `${t.slice(0, 40)}…` : t;
+});
+
+function onContextMenu(e: MouseEvent) {
+  const td = (e.target as HTMLElement).closest('td[data-col]') as HTMLElement | null;
+  const row = td ? rows.value[Number(td.dataset['row'])]?.original : undefined;
+  const col = td ? defs.value[td.dataset['col'] ?? ''] : undefined;
+  if (!row || !col) {
+    // Outside a cell the browser's own menu stays available.
+    e.stopPropagation();
+    menu.value = null;
+    return;
+  }
+  menu.value = { row, col, value: col.value(row), text: displayText(row, col, props.zone) };
+}
+
+function setRangeEdge(edge: 'from' | 'to') {
+  const m = menu.value;
+  if (!m || typeof m.value !== 'number') return;
+  const current = rangeOf(currentFilter(m.col.id));
+  setFilter(m.col.id, { kind: 'range', from: current?.from, to: current?.to, [edge]: m.value });
+}
+
+async function copy(text: string, what: string) {
+  try {
+    await navigator.clipboard.writeText(text);
+    toast.success(`${what} copied`);
+  } catch {
+    toast.error('The clipboard is not available here');
+  }
+}
+
+function copyRow(row: Row) {
+  const lines = headers.value.map(h => `${labelOf(h.id)}: ${cellText(row, h.id)}`);
+  void copy(lines.join('\n'), 'Row');
+}
+
+// ---------------------------------------------------------------- rows
 
 const scroller = ref<HTMLElement | null>(null);
 const virtualizer = useVirtualizer(
@@ -305,11 +592,11 @@ function open(row: Row) {
   if (event) emit('open', event, props.view.detail?.(row));
 }
 
-const timeColumns = computed(() => props.view.columns.filter(c => c.kind === 'time'));
+// ---------------------------------------------------------------- export
 
 function snapshot(): TableSnapshot<Row> {
   return {
-    columns: visibleColumns.value.map((c: { id: string }) => defs.value[c.id]!).filter(Boolean),
+    columns: headers.value.filter(h => h.column.getIsVisible()).map(h => defs.value[h.id]!).filter(Boolean),
     rows: rows.value.map(r => r.original),
     event: props.view.event,
     sourceName: e => eventStore.sources.find(s => s.index === e.src)?.name ?? '',
@@ -323,7 +610,7 @@ function exportCsv() {
 }
 
 function exportJsonl() {
-  const { text, skipped } = tableToJsonl(snapshot(), timeColumns.value, `glossy:${props.exportName}`);
+  const { text, skipped } = tableToJsonl(snapshot(), props.view.columns.filter(c => c.kind === 'time'), `glossy:${props.exportName}`);
   if (skipped) toast.warning(`${skipped.toLocaleString()} row(s) without a time were left out of the JSONL file.`);
   if (text) download(fileName('jsonl'), text, 'application/x-ndjson;charset=utf-8');
 }

@@ -68,6 +68,40 @@ export function dayAndHour(ts: number, zone: string): { day: string; hour: numbe
   return { day: p.date, hour: h + m / 60 + s / 3600 };
 }
 
+/** Offset of the zone from UTC at an instant, in ms (Asia/Seoul: +9 h). */
+export function offsetMs(ts: number, zone: string): number {
+  if (zone === UTC) return 0;
+  const o = parts(ts, zone).offset;
+  const sign = o.startsWith('-') ? -1 : 1;
+  return sign * (Number(o.slice(1, 3)) * 60 + Number(o.slice(4, 6))) * 60000;
+}
+
+/**
+ * Epoch ms of a wall-clock time in the zone. Repeated times (clocks set back) resolve to the
+ * instant with the first offset found; times skipped by a clock change resolve to just after it.
+ */
+export function zonedToEpoch(zone: string, year: number, month: number, day: number, hour = 0, minute = 0, second = 0): number {
+  const wall = Date.UTC(year, month - 1, day, hour, minute, second);
+  const o1 = offsetMs(wall, zone);
+  const t1 = wall - o1;
+  const o2 = offsetMs(t1, zone);
+  if (o1 === o2) return t1;
+  const t2 = wall - o2;
+  return offsetMs(t2, zone) === o2 ? t2 : Math.max(t1, t2);
+}
+
+/** Offset lookup for many instants in one zone, cached per quarter hour (zone rules only change on those). */
+export function offsetCache(zone: string): (ts: number) => number {
+  if (zone === UTC) return () => 0;
+  const cache = new Map<number, number>();
+  return ts => {
+    const k = Math.floor(ts / 900000);
+    let o = cache.get(k);
+    if (o === undefined) cache.set(k, (o = offsetMs(ts, zone)));
+    return o;
+  };
+}
+
 /** Offset label of the zone at a given instant, e.g. "UTC+09:00". */
 export function offsetLabel(zone: string, at = Date.now()): string {
   return `UTC${parts(at, zone).offset}`;

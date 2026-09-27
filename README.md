@@ -49,7 +49,13 @@ The Timeline page runs every module with its default options and puts their rows
 | Document Printing | Printed documents with owner, client, printer, pages; spool file; default printer changes | PrintService 307/800/801/805/812/823/842 |
 | Wireless & Networks | Wi-Fi connections, failures, networks and their security; network connections by name | WLAN-AutoConfig 8000–8003, NetworkProfile 10000/10001 |
 
-Every module has an event table (filter any column, search all columns, sort, CSV and JSONL export) and opens any row as the full record. Every page and view has its own address (`#/m/logon/sessions`), so the back button and links work.
+Every module has an event table that opens any row as the full record, and every page and view has its own address (`#/m/logon/sessions`), so the back button and links work. The tables follow Timeline Explorer and Kibana:
+
+- A histogram of the filtered rows sits above the table; drag across bars (or click one) to filter to that time, and it zooms to the selection down to minutes.
+- Pick-list columns filter on several values at once, with counts and an exclude switch; other columns filter on text; time columns take a from/to range in the selected zone.
+- Right-click a cell to filter for or filter out its value, show events from or until a time, or copy the value or row. Active filters show as chips: click one to invert it, or remove it.
+- Columns can be resized, dragged into a new order, pinned to the left and hidden; the layout is remembered per view in this browser.
+- CSV and Timesketch JSONL export the filtered rows.
 
 Findings are leads, not verdicts: check them against the original record (XML view) and other artifacts.
 
