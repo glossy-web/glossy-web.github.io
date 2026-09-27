@@ -1,17 +1,17 @@
 import { ref, watch } from 'vue';
-import { browserZone, UTC } from '@/core/time';
+import { browserZone } from '@/core/time';
 
 const TZ_KEY = 'glossy.timeZone';
 
 function readZone(): string {
   try {
-    return localStorage.getItem(TZ_KEY) || UTC;
+    return localStorage.getItem(TZ_KEY) || browserZone();
   } catch {
-    return UTC;
+    return browserZone();
   }
 }
 
-/** Display time zone. UTC by default; the choice is remembered per browser. */
+/** Display time zone: this computer's zone until the analyst picks one, which is then remembered per browser. */
 export const timeZone = ref(readZone());
 
 watch(timeZone, zone => {
@@ -27,5 +27,3 @@ export const activePage = ref('__overview');
 
 /** Per-plugin option toggles (noise filters etc.), keyed by plugin name. */
 export const pluginOptions = ref<Record<string, Record<string, boolean>>>({});
-
-export { browserZone };

@@ -1,5 +1,5 @@
 <template>
-  <figure class="chart border rounded p-2 mb-0" :style="{ background: chartTheme(dark).surface }">
+  <figure class="chart border rounded p-2 mb-0" :style="{ background: theme.surface }">
     <figcaption class="small fw-semibold px-1">{{ spec.title }}</figcaption>
     <div ref="el" class="canvas" :style="{ height: height + 'px' }" role="img" :aria-label="ariaLabel"></div>
   </figure>
@@ -13,11 +13,11 @@ import { DataZoomComponent, GridComponent, LegendComponent, TooltipComponent } f
 import { CanvasRenderer } from 'echarts/renderers';
 import type { ChartSpec } from '@/core/plugin';
 import { dayAndHour, formatTime } from '@/core/time';
-import { chartTheme } from './chartTheme';
+import { chartTheme as theme } from './chartTheme';
 
 echarts.use([BarChart, ScatterChart, GridComponent, TooltipComponent, LegendComponent, DataZoomComponent, CanvasRenderer]);
 
-const props = defineProps<{ spec: ChartSpec; zone: string; dark: boolean }>();
+const props = defineProps<{ spec: ChartSpec; zone: string }>();
 const el = ref<HTMLElement | null>(null);
 let chart: echarts.ECharts | null = null;
 let resize: ResizeObserver | null = null;
@@ -37,7 +37,6 @@ function bucketOf(ts: number, bucket: Bucket, zone: string): string {
 }
 
 function timelineOption(spec: Extract<ChartSpec, { kind: 'timeline' }>) {
-  const theme = chartTheme(props.dark);
   const all = spec.series.flatMap(s => s.ts);
   const span = all.length ? Math.max(...all) - Math.min(...all) : 0;
   const bucket: Bucket = span <= 2 * 86400000 ? 'hour' : span <= 400 * 86400000 ? 'day' : 'month';
@@ -74,7 +73,6 @@ function timelineOption(spec: Extract<ChartSpec, { kind: 'timeline' }>) {
 }
 
 function clockOption(spec: Extract<ChartSpec, { kind: 'clock' }>) {
-  const theme = chartTheme(props.dark);
   return {
     color: theme.series,
     textStyle: { color: theme.text, fontFamily: theme.font },
@@ -123,7 +121,6 @@ function clockOption(spec: Extract<ChartSpec, { kind: 'clock' }>) {
 }
 
 function rankingOption(spec: Extract<ChartSpec, { kind: 'ranking' }>) {
-  const theme = chartTheme(props.dark);
   const items = [...spec.items].reverse();
   return {
     color: theme.series,
@@ -168,7 +165,7 @@ onMounted(() => {
   resize = new ResizeObserver(() => chart?.resize());
   if (el.value) resize.observe(el.value);
 });
-watch(() => [props.spec, props.zone, props.dark], render);
+watch(() => [props.spec, props.zone], render);
 onBeforeUnmount(() => {
   resize?.disconnect();
   chart?.dispose();

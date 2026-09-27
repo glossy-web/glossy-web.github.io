@@ -13,7 +13,7 @@
     <DashboardPanel :stats="result.stats" />
 
     <div v-if="charts.length" class="charts">
-      <SummaryChart v-for="c in charts" :key="c.title" :spec="c" :zone="zone" :dark="dark" />
+      <SummaryChart v-for="c in charts" :key="c.title" :spec="c" :zone="zone" />
     </div>
 
     <section class="d-flex flex-column flex-grow-1 views">
@@ -61,7 +61,7 @@ import SummaryChart from './SummaryChart.vue';
 import EventTable from './EventTable.vue';
 import EventDetailModal from './EventDetailModal.vue';
 
-const props = defineProps<{ name: string; zone: string; dark: boolean }>();
+const props = defineProps<{ name: string; zone: string }>();
 
 const plugin = computed(() => pluginByName.get(props.name) ?? pluginByName.get('showAll')!);
 const detail = shallowRef<{ event: EvtxEvent; extra: RowDetail | undefined } | null>(null);
