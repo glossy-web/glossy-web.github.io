@@ -108,8 +108,8 @@ export const documentPrinting: Plugin = {
       ],
       charts: printed.length
         ? [
-            { kind: 'timeline', title: 'Documents printed', series: [{ name: 'Documents', ts: printed.map(j => j.event.ts) }] },
-            { kind: 'ranking', title: 'Documents by user', items: ranking(printed.map(j => j.user), 10) },
+            { kind: 'timeline', title: 'Documents printed', series: [{ name: 'Documents', ts: printed.map(j => j.event.ts) }], target: { view: 'jobs' } },
+            { kind: 'ranking', title: 'Documents by user', items: ranking(printed.map(j => j.user), 10), target: { view: 'jobs', column: 'user' } },
           ]
         : [],
       views: [

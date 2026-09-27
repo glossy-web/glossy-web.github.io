@@ -87,6 +87,7 @@ export const update: Plugin = {
         {
           kind: 'timeline',
           title: 'Update installs',
+          target: { view: 'events' },
           series: [
             { name: 'Installed', ts: installs.map(r => r.event.ts) },
             { name: 'Failed', ts: failures.map(r => r.event.ts) },

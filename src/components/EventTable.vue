@@ -326,13 +326,13 @@ const props = defineProps<{
   exportName: string;
   /** Heading of exported reports. */
   title?: string;
-  /** Column filters to start with (column id → value), e.g. from a pivot. */
-  filters?: Record<string, string>;
+  /** Column filters to start with, e.g. from a pivot (a plain value) or a chart click. */
+  filters?: Record<string, string | ColumnFilter>;
   /** Search text, time range and a record to select when the table opens (from the page address). */
   initial?: { search?: string; from?: number; to?: number; anchor?: number };
 }>();
 const emit = defineEmits<{ open: [event: EvtxEvent, detail: RowDetail | undefined]; pivot: [target: Pivot] }>();
-defineExpose({ step, searchFor });
+defineExpose({ step, searchFor, applyFilter });
 
 const ROW_HEIGHT = 26;
 const STAR_WIDTH = 26;
@@ -442,7 +442,7 @@ const columns = props.view.columns.map(c => ({
 /** Pivot presets: pick-list columns match the value exactly, others contain it. A time range from the address applies to the first time column. */
 const presetFilters = Object.entries(props.filters ?? {}).map(([id, value]) => ({
   id,
-  value: (defs.value[id]?.facet ? { kind: 'values', values: [value] } : { kind: 'text', text: value }) as ColumnFilter,
+  value: (typeof value !== 'string' ? value : defs.value[id]?.facet ? { kind: 'values', values: [value] } : { kind: 'text', text: value }) as ColumnFilter,
 }));
 if (timeColumn.value && (props.initial?.from !== undefined || props.initial?.to !== undefined))
   presetFilters.push({ id: timeColumn.value.id, value: { kind: 'range', from: props.initial.from, to: props.initial.to } });
@@ -686,6 +686,10 @@ function step(delta: number) {
   // Stepping opens records; it never pivots to another view.
   const event = props.view.event?.(row.original);
   if (event) emit('open', event, props.view.detail?.(row.original));
+}
+
+function applyFilter(column: string, filter: ColumnFilter) {
+  setFilter(column, filter);
 }
 
 function searchFor(text: string) {

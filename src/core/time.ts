@@ -102,6 +102,14 @@ export function offsetCache(zone: string): (ts: number) => number {
   };
 }
 
+/** The calendar day containing the instant, in the zone: [start, end) in epoch ms. */
+export function dayBounds(ts: number, zone: string): { from: number; to: number } {
+  const t = new Date(ts + offsetMs(ts, zone));
+  const [y, m, d] = [t.getUTCFullYear(), t.getUTCMonth() + 1, t.getUTCDate()];
+  const next = new Date(Date.UTC(y, m - 1, d + 1));
+  return { from: zonedToEpoch(zone, y, m, d), to: zonedToEpoch(zone, next.getUTCFullYear(), next.getUTCMonth() + 1, next.getUTCDate()) };
+}
+
 /** Offset label of the zone at a given instant, e.g. "UTC+09:00". */
 export function offsetLabel(zone: string, at = Date.now()): string {
   return `UTC${parts(at, zone).offset}`;

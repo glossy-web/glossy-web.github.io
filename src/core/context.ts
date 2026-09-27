@@ -25,7 +25,13 @@ function learnSids(events: readonly EvtxEvent[]): Map<string, string> {
   return names;
 }
 
-export function createContext(store: EventStore, starred: PluginContext['starred'] = () => undefined): PluginContext {
+/** Analyst state and lookups the UI provides; analysis code only sees them through the context. */
+export interface ContextOptions {
+  starred?: PluginContext['starred'];
+  ipInfo?: PluginContext['ipInfo'];
+}
+
+export function createContext(store: EventStore, options: ContextOptions = {}): PluginContext {
   let sids: Map<string, string> | null = null;
   return {
     select: selectors => store.select(selectors),
@@ -37,6 +43,7 @@ export function createContext(store: EventStore, starred: PluginContext['starred
     },
     source: e => store.sources.find(s => s.index === e.src),
     files: () => store.sources,
-    starred,
+    starred: options.starred ?? (() => undefined),
+    ipInfo: options.ipInfo ?? (() => undefined),
   };
 }

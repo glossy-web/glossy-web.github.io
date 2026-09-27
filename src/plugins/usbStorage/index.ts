@@ -231,6 +231,7 @@ export const usbStorage: Plugin = {
         {
           kind: 'clock',
           title: 'Device connections by time of day',
+          target: { view: 'history' },
           series: [
             { name: 'Connected', ts: rows.filter(r => r.action === 'Connected').map(r => r.event.ts) },
             { name: 'Disconnected', ts: rows.filter(r => r.action === 'Disconnected').map(r => r.event.ts) },

@@ -3,7 +3,7 @@ import type { Column, Plugin, SourceSpec, Tone } from '@/core/plugin';
 import { account, ipScope, splitHostPort } from '@/core/format';
 import { failureReason, isNoiseAccount } from '@/core/lookups';
 import { formatDuration } from '@/core/time';
-import { d, eventView, groupBy, SECURITY, text, withBase, type EventRow } from '../common';
+import { connectionGraph, d, eventView, groupBy, insertAfter, networkColumns, SECURITY, text, withBase, type EventRow } from '../common';
 
 const LSM = 'Microsoft-Windows-TerminalServices-LocalSessionManager';
 const RCM = 'Microsoft-Windows-TerminalServices-RemoteConnectionManager';
@@ -222,16 +222,23 @@ export const rdpLogon: Plugin = {
         {
           kind: 'clock',
           title: 'RDP activity by time of day',
+          target: { view: 'events' },
           series: [
             { name: 'Inbound logon', ts: inbound.filter(r => [21, 1149, 4624].includes(r.event.eventId)).map(r => r.event.ts) },
             { name: 'Failed logon', ts: failures.map(r => r.event.ts) },
             { name: 'Outbound', ts: outbound.filter(r => r.event.eventId === 1024).map(r => r.event.ts) },
           ],
         },
+        connectionGraph(
+          'Inbound RDP by source address',
+          inbound.map(r => ({ source: r.address, target: r.event.computer, account: r.user, failed: r.event.eventId === 4625 })),
+          ctx,
+          { view: 'events', sourceColumn: 'address', targetColumn: 'computer' },
+        ),
       ],
       views: [
         {
-          ...eventView('events', 'Events', rows, eventColumns),
+          ...eventView('events', 'Events', rows, insertAfter(eventColumns, 'scope', networkColumns(ctx, r => r.address))),
           timeline: r => ({
             title: `RDP: ${r.stage}`,
             detail: [r.direction === 'Outbound' && 'Outbound', r.session && `Session ${r.session}`, r.detail].filter(Boolean).join(' · '),
@@ -241,7 +248,14 @@ export const rdpLogon: Plugin = {
           }),
         },
         eventView('sessions', 'Sessions', sessions(rows), sessionColumns),
-        { id: 'sources', label: 'Source addresses', rows: sourceRows, columns: sourceColumns, event: r => r.sample, sort: { id: 'last', desc: true } },
+        {
+          id: 'sources',
+          label: 'Source addresses',
+          rows: sourceRows,
+          columns: insertAfter(sourceColumns, 'scope', networkColumns(ctx, r => r.address)),
+          event: r => r.sample,
+          sort: { id: 'last', desc: true },
+        },
       ],
       notes: [],
     };

@@ -53,9 +53,11 @@ export const showAll: Plugin = {
         {
           kind: 'timeline',
           title: 'Events over time',
+          target: { view: 'events' },
           series: [{ name: 'Events', ts: events.map(e => e.ts) }],
         },
-        { kind: 'ranking', title: 'Top channels', items: ranking(events.map(e => e.channel), 10) },
+        { kind: 'ranking', title: 'Top channels', items: ranking(events.map(e => e.channel), 10), target: { column: 'channel' } },
+        { kind: 'calendar', title: 'Events per day', ts: events.map(e => e.ts) },
       ],
       views: [{ id: 'events', label: 'Events', rows: events, columns, event: e => e, sort: { id: 'time' } }],
       notes: [],

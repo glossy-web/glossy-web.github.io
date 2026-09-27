@@ -113,6 +113,7 @@ export const wireless: Plugin = {
         {
           kind: 'clock',
           title: 'Wi-Fi activity by time of day',
+          target: { view: 'events' },
           series: [
             { name: 'Connected', ts: rows.filter(r => r.event.eventId === 8001).map(r => r.event.ts) },
             { name: 'Disconnected', ts: rows.filter(r => r.event.eventId === 8003).map(r => r.event.ts) },

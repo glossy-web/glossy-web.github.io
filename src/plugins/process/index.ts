@@ -170,7 +170,7 @@ export const processExecution: Plugin = {
         { label: 'Distinct executables', value: images.length },
         { label: 'Run from user-writable paths', value: writable.length, tone: writable.length ? 'warning' : undefined },
       ],
-      charts: [{ kind: 'ranking', title: 'Most executed', items: ranking(created.map(r => basename(r.image)), 12) }],
+      charts: [{ kind: 'ranking', title: 'Most executed', items: ranking(created.map(r => basename(r.image)), 12), target: { view: 'events', column: 'image', match: 'contains' } }],
       views: [
         {
           ...eventView('events', 'Events', rows, eventColumns),

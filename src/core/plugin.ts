@@ -1,4 +1,5 @@
 import type { EvtxEvent, SourceFile } from './evtx/types';
+import type { AsInfo } from './ipdb';
 import type { Selector } from './store';
 
 export type Tone = 'danger' | 'warning' | 'success' | 'muted';
@@ -72,13 +73,49 @@ export interface Series {
   ts: number[];
 }
 
-export type ChartSpec =
-  /** Events per day, stacked by series. */
+/**
+ * What clicking a chart filters in the page's table: time charts set a time range on the view's
+ * time column; ranking bars set `column` to the bar's name (exact value or substring).
+ */
+export interface ChartTarget {
+  /** View to filter; the view on screen when omitted. */
+  view?: string;
+  column?: string;
+  match?: 'exact' | 'contains';
+}
+
+export interface GraphNode {
+  id: string;
+  label: string;
+  /** Sources (addresses) and targets (computers) are drawn in different colors. */
+  group: 'source' | 'target';
+  weight: number;
+  /** Tooltip text. */
+  detail?: string;
+  /** Column filter a click on the node applies. */
+  filter?: { column: string; value: string };
+}
+
+export interface GraphLink {
+  source: string;
+  target: string;
+  weight: number;
+  detail?: string;
+  tone?: Tone;
+}
+
+export type ChartSpec = (
+  /** Events per time bucket (minute to month), stacked by series. */
   | { kind: 'timeline'; title: string; series: Series[] }
   /** Each event as a dot at (date, time of day) — spots off-hours activity. */
   | { kind: 'clock'; title: string; series: Series[] }
   /** Top items by count, as horizontal bars. */
-  | { kind: 'ranking'; title: string; items: { name: string; value: number }[] };
+  | { kind: 'ranking'; title: string; items: { name: string; value: number }[] }
+  /** Events per calendar day, one row of weeks per year (as GitHub's contribution graph). */
+  | { kind: 'calendar'; title: string; ts: number[] }
+  /** Who connected to what: sources, targets and the links between them. */
+  | { kind: 'graph'; title: string; nodes: GraphNode[]; links: GraphLink[] }
+) & { target?: ChartTarget };
 
 export interface Note {
   tone: 'info' | 'warning';
@@ -116,6 +153,8 @@ export interface PluginContext {
   files(): readonly SourceFile[];
   /** The analyst's star on an event, with its note; undefined when the event is not starred. */
   starred(e: EvtxEvent): { note: string } | undefined;
+  /** Announcing AS and registered country of a public IPv4 address (iptoasn.com); undefined if unknown or not loaded yet. */
+  ipInfo(ip: string): AsInfo | undefined;
 }
 
 export type Category = 'System' | 'Account' | 'Application' | 'Hardware' | 'All';

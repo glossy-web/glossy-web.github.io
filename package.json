@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "build:wasm": "wasm-pack build wasm --target web --release --out-dir pkg --out-name evtx_wasm",
+    "build:ip2asn": "node --experimental-strip-types scripts/build-ip2asn.ts",
     "dev": "vite",
     "build": "vue-tsc --noEmit && vite build",
     "preview": "vite preview",

@@ -174,6 +174,7 @@ export const powershell: Plugin = {
         {
           kind: 'timeline',
           title: 'Script blocks over time',
+          target: { view: 'blocks' },
           series: [
             { name: 'Flagged or with indicators', ts: blocks.filter(r => r.block.flagged || r.indicators.length).map(r => r.event.ts) },
             { name: 'Other', ts: blocks.filter(r => !r.block.flagged && !r.indicators.length).map(r => r.event.ts) },
