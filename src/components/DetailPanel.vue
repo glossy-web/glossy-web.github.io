@@ -58,7 +58,10 @@
             <tbody>
               <tr v-for="[key, value] in dataRows" :key="key" class="group/field hover:bg-muted/50 border-t">
                 <th class="text-muted-foreground w-36 py-0.5 pr-2 text-left align-top font-medium break-all">{{ key }}</th>
-                <td class="py-0.5 font-mono break-all whitespace-pre-wrap">{{ value }}</td>
+                <td class="py-0.5 font-mono break-all whitespace-pre-wrap">
+                  {{ value }}
+                  <div v-if="network(value)" class="text-muted-foreground font-sans text-[11px]">{{ network(value) }}</div>
+                </td>
                 <td class="w-16 py-0.5 text-right align-top whitespace-nowrap">
                   <span v-if="value && value !== '-'" class="invisible inline-flex group-hover/field:visible group-focus-within/field:visible">
                     <button type="button" class="hover:bg-muted rounded-sm p-0.5" :title="`Search this table for “${short(value)}”`" @click="emit('search', value)"><SearchIcon class="size-3.5" /></button>
@@ -107,6 +110,7 @@ import { eventStore } from '@/core/store';
 import { createContext } from '@/core/context';
 import { renderXml } from '@/composables/useFileLoader';
 import { setNote, starOf, toggleStar } from '@/composables/useStars';
+import { ipInfo } from '@/composables/useIpInfo';
 
 const props = defineProps<{ event: EvtxEvent; zone: string; extra?: RowDetail }>();
 const emit = defineEmits<{ close: []; step: [delta: number]; search: [value: string] }>();
@@ -152,6 +156,15 @@ const json = computed(() => {
   return JSON.stringify({ ...rest, sourceFile: source.value?.name }, null, 2);
 });
 const short = (v: string) => (v.length > 40 ? `${v.slice(0, 40)}…` : v);
+
+const regions = new Intl.DisplayNames(['en'], { type: 'region' });
+/** "South Korea (KR) · AS4766 KIXS-AS-KR Korea Telecom" for a public IPv4 value. */
+function network(value: string): string {
+  const info = ipInfo(value);
+  if (!info) return '';
+  const country = info.country ? `${regions.of(info.country) ?? info.country} (${info.country}) · ` : '';
+  return `${country}AS${info.asn} ${info.name}`;
+}
 
 async function loadXml() {
   xmlState.value = 'loading';

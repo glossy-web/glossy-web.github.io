@@ -13,6 +13,10 @@ export interface ChartTheme {
   axis: string;
   border: string;
   font: string;
+  /** Low and high end of the single-hue scale for counts (calendar heatmap). */
+  scale: [string, string];
+  /** Links and marks that carry a failure. */
+  danger: string;
 }
 
 const font = 'system-ui, -apple-system, "Segoe UI", sans-serif';
@@ -26,6 +30,8 @@ const light: ChartTheme = {
   axis: '#c3c2b7',
   border: 'rgba(11,11,11,0.10)',
   font,
+  scale: ['#b9d4f5', '#1d5aa3'],
+  danger: '#dc2626',
 };
 
 const dark: ChartTheme = {
@@ -37,6 +43,8 @@ const dark: ChartTheme = {
   axis: '#3f3f46',
   border: 'rgba(255,255,255,0.10)',
   font,
+  scale: ['#24466e', '#8cc0f7'],
+  danger: '#f87171',
 };
 
 export function chartTheme(isDark: boolean): ChartTheme {

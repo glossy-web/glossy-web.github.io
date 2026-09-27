@@ -24,7 +24,7 @@ export const cdRecording: Plugin = {
         { label: 'Events', value: rows.length },
         { label: 'Drives', value: new Set(rows.map(r => r.device)).size },
       ],
-      charts: rows.length ? [{ kind: 'timeline', title: 'Optical drive events', series: [{ name: 'cdrom 133', ts: rows.map(r => r.event.ts) }] }] : [],
+      charts: rows.length ? [{ kind: 'timeline', title: 'Optical drive events', series: [{ name: 'cdrom 133', ts: rows.map(r => r.event.ts) }], target: { view: 'events' } }] : [],
       views: [{ ...eventView('events', 'Events', rows, columns), timeline: r => ({ title: 'Optical drive event (cdrom 133)', detail: r.device }) }],
       notes: [],
     };

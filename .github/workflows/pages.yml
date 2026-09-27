@@ -41,6 +41,10 @@ jobs:
       - run: npm ci
       - name: Build the EVTX parser (Rust → WebAssembly)
         run: npm run build:wasm
+      - name: Pack the IP-to-ASN database (iptoasn.com, fetched fresh on every build)
+        run: |
+          curl -sSfL --retry 3 -o "$RUNNER_TEMP/ip2asn-v4-u32.tsv.gz" https://iptoasn.com/data/ip2asn-v4-u32.tsv.gz
+          npm run build:ip2asn -- "$RUNNER_TEMP/ip2asn-v4-u32.tsv.gz"
       - run: npm run typecheck
       - run: npm test
       - run: npx vite build

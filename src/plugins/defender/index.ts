@@ -214,6 +214,7 @@ export const defender: Plugin = {
         {
           kind: 'timeline',
           title: 'Detections and protection changes',
+          target: { view: 'detections' },
           series: [
             { name: 'Detections', ts: detections.filter(r => [1006, 1015, 1116].includes(r.event.eventId)).map(r => r.event.ts) },
             { name: 'Protection weakened', ts: weakened.map(r => r.event.ts) },

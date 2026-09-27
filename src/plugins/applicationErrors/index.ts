@@ -154,7 +154,7 @@ export const applicationErrors: Plugin = {
         { label: '.NET exceptions', value: rows.filter(r => r.kind === '.NET unhandled exception').length },
         { label: 'Applications', value: apps.length },
       ],
-      charts: [{ kind: 'ranking', title: 'Most frequent faulting applications', items: ranking(withApp.map(r => r.app || basename(r.path)), 10) }],
+      charts: [{ kind: 'ranking', title: 'Most frequent faulting applications', items: ranking(withApp.map(r => r.app || basename(r.path)), 10), target: { view: 'events', column: 'app', match: 'contains' } }],
       views: [
         {
           ...eventView('events', 'Events', rows, eventColumns),

@@ -178,11 +178,13 @@ export const softwareInstall: Plugin = {
         {
           kind: 'timeline',
           title: 'Installs and removals',
+          target: { view: 'events' },
           series: [
             { name: 'Installed', ts: installs.map(r => r.event.ts) },
             { name: 'Removed', ts: removals.map(r => r.event.ts) },
           ],
         },
+        { kind: 'calendar', title: 'Installs and removals per day', ts: [...installs, ...removals].map(r => r.event.ts), target: { view: 'events' } },
       ],
       views: [
         {

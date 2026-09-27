@@ -1,6 +1,6 @@
 import type { EvtxEvent } from '@/core/evtx/types';
 import type { Column, Plugin, PluginContext, Tone, View } from '@/core/plugin';
-import { eventView, text, withBase, type EventRow } from '../common';
+import { eventView, insertAfter, networkColumns, text, withBase, type EventRow } from '../common';
 
 export interface TimelineRow extends EventRow {
   modules: string[];
@@ -99,12 +99,12 @@ const entityColumns: Column<EntityRow>[] = [
   text('modules', 'Modules', r => r.modules, { size: 360 }),
 ];
 
-function entityView(rows: EntityRow[]): View<EntityRow> {
+function entityView(rows: EntityRow[], ctx: PluginContext): View<EntityRow> {
   return {
     id: 'entities',
     label: 'Entities',
     rows,
-    columns: entityColumns,
+    columns: insertAfter(entityColumns, 'value', networkColumns(ctx, r => (r.kind === 'Remote address' ? r.value : ''))),
     pivot: r => ({ view: 'timeline', filters: { [PIVOT_COLUMN[r.kind]]: r.value } }),
     sort: { id: 'highlighted', desc: true },
   };
@@ -142,16 +142,17 @@ export function createTimeline(modules: readonly Plugin[]): Plugin {
           {
             kind: 'timeline',
             title: 'Entries per day',
+            target: { view: 'timeline' },
             series: [
               { name: 'Highlighted', ts: rows.filter(r => highlighted(r.tone)).map(r => r.event.ts) },
               { name: 'Other', ts: rows.filter(r => !highlighted(r.tone)).map(r => r.event.ts) },
             ],
           },
-          { kind: 'ranking', title: 'Entries by module', items: [...perModule].map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value) },
+          { kind: 'ranking', title: 'Entries by module', target: { view: 'timeline', column: 'module', match: 'contains' }, items: [...perModule].map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value) },
         ],
         views: [
           eventView('timeline', 'Timeline', rows, timelineColumns),
-          entityView(found),
+          entityView(found, ctx),
         ],
         notes: [],
       };

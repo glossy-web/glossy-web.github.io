@@ -170,6 +170,7 @@ export const systemOnOff: Plugin = {
         {
           kind: 'clock',
           title: 'Power events by time of day',
+          target: { view: 'events' },
           series: [
             { name: 'Boot', ts: boots.map(r => r.event.ts) },
             { name: 'Shutdown', ts: shutdowns.map(r => r.event.ts) },

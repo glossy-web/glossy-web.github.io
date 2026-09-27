@@ -63,6 +63,13 @@ Every module has an event table, and every page and view has its own address (`#
 - **Surrounding events** opens All Events for ±1 minute to ±1 hour around the record, across every loaded log, with the record selected (Timesketch's context search).
 - Star events (star column, panel, or **S**) and add a note; the **Starred** page lists them for a report. Stars are kept in this browser by record identity, so they return when the same logs (or other copies of them) are loaded again.
 
+**Charts and networks**
+
+- Every chart filters the table when clicked: a bar or calendar day sets the time range, a ranking bar or graph node sets that value.
+- Account Logon and RDP draw a source → computer graph (as the original Glossy did for RDP): node size by volume, red links where logons failed.
+- All Events and Software Install show a calendar heatmap of events per day.
+- Public IPv4 addresses get their registered country and announcing network (AS number and name) from the [iptoasn.com](https://iptoasn.com/) database, in Account Logon, RDP, the Timeline's entities and the record panel. The database is packed into the site at build time and looked up in the browser; addresses are never sent anywhere. It describes routing today, not at the time of the event.
+
 Findings are leads, not verdicts: check them against the original record (XML view) and other artifacts.
 
 ## Usage
@@ -81,6 +88,9 @@ Prerequisites: Node.js 22, Rust (stable) with the `wasm32-unknown-unknown` targe
 rustup target add wasm32-unknown-unknown
 npm ci
 npm run build:wasm   # compiles wasm/ (Rust) into wasm/pkg
+# IP country/AS data (optional locally; CI fetches it on every deploy):
+curl -sSfLO https://iptoasn.com/data/ip2asn-v4-u32.tsv.gz
+npm run build:ip2asn -- ip2asn-v4-u32.tsv.gz   # writes public/data/ip2asn-v4.bin.gz
 npm run dev          # local dev server
 npm test             # regression tests on real EVTX fixtures (tests/fixtures)
 npm run build        # type check + production build into dist/
@@ -101,3 +111,4 @@ The Rust side is a thin wrapper in [`wasm/src/lib.rs`](wasm/src/lib.rs); everyth
 
 - Original Glossy and the KDFS 2017 analysis: [whatabeautifulmemory/glossy](https://github.com/whatabeautifulmemory/glossy)
 - EVTX parsing: [omerbenamram/evtx](https://github.com/omerbenamram/evtx) (MIT/Apache-2.0); test fixtures are derived from its samples (see `tests/fixtures/README.md`)
+- IP to ASN and country: [iptoasn.com](https://iptoasn.com/)

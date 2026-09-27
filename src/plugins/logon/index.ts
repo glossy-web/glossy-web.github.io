@@ -3,7 +3,7 @@ import type { Column, Plugin, Tone } from '@/core/plugin';
 import { account, countBy, ipScope, ranking } from '@/core/format';
 import { failureReason, isNoiseAccount, logonTypeName, messageCode } from '@/core/lookups';
 import { formatDuration } from '@/core/time';
-import { d, eventView, groupBy, SECURITY, text, withBase, type EventRow } from '../common';
+import { connectionGraph, d, eventView, groupBy, insertAfter, networkColumns, SECURITY, text, withBase, type EventRow } from '../common';
 
 const LABELS: Record<number, string> = {
   4624: 'Logon',
@@ -209,17 +209,24 @@ export const logon: Plugin = {
         {
           kind: 'clock',
           title: 'Logon activity by time of day',
+          target: { view: 'events' },
           series: [
             { name: 'Logon', ts: successes.map(r => r.event.ts) },
             { name: 'Failed logon', ts: failures.map(r => r.event.ts) },
             { name: 'Logoff', ts: rows.filter(r => r.event.eventId === 4634 || r.event.eventId === 4647).map(r => r.event.ts) },
           ],
         },
-        { kind: 'ranking', title: 'Failed logons by reason', items: ranking(failures.map(r => r.failure || '(no status)'), 8) },
+        { kind: 'ranking', title: 'Failed logons by reason', items: ranking(failures.map(r => r.failure || '(no status)'), 8), target: { view: 'events', column: 'failure' } },
+        connectionGraph(
+          'Logons by source address',
+          [...successes, ...failures].map(r => ({ source: r.sourceIp, target: r.event.computer, account: r.user, failed: r.event.eventId === 4625 })),
+          ctx,
+          { view: 'events', sourceColumn: 'sourceIp', targetColumn: 'computer' },
+        ),
       ],
       views: [
         {
-          ...eventView('events', 'Events', rows, eventColumns),
+          ...eventView('events', 'Events', rows, insertAfter(eventColumns, 'sourceIp', networkColumns(ctx, r => r.sourceIp))),
           timeline: r =>
             r.event.eventId === 4634 || r.event.eventId === 4647
               ? undefined
@@ -232,7 +239,14 @@ export const logon: Plugin = {
                 },
         },
         { ...eventView('sessions', 'Sessions', sessions, sessionColumns) },
-        { id: 'failures', label: 'Failures by source', rows: failureGroups, columns: failureColumns, event: r => r.sample, sort: { id: 'count', desc: true } },
+        {
+          id: 'failures',
+          label: 'Failures by source',
+          rows: failureGroups,
+          columns: insertAfter(failureColumns, 'source', networkColumns(ctx, r => r.source)),
+          event: r => r.sample,
+          sort: { id: 'count', desc: true },
+        },
       ],
       notes,
     };

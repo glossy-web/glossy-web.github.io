@@ -163,7 +163,7 @@ export const services: Plugin = {
         { label: 'Crashes', value: all.filter(r => r.event.eventId === 7034).length },
         { label: 'Services seen', value: new Set(all.map(r => r.service.toLowerCase()).filter(Boolean)).size },
       ],
-      charts: [{ kind: 'timeline', title: 'Service installs over time', series: [{ name: 'Installs', ts: installs.map(r => r.event.ts) }] }],
+      charts: [{ kind: 'timeline', title: 'Service installs over time', series: [{ name: 'Installs', ts: installs.map(r => r.event.ts) }], target: { view: 'events' } }],
       views: [
         {
           ...eventView('events', 'Events', rows, eventColumns),

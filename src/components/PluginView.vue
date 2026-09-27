@@ -17,10 +17,10 @@
     <DashboardPanel :stats="result.stats" />
 
     <div v-if="charts.length" class="grid grid-cols-[repeat(auto-fit,minmax(420px,1fr))] gap-3">
-      <SummaryChart v-for="c in charts" :key="c.title" :spec="c" :zone="timeZone" />
+      <SummaryChart v-for="c in charts" :key="c.title" :spec="c" :zone="timeZone" @filter="chartFilter" />
     </div>
 
-    <section class="flex min-h-[420px] flex-1 flex-col">
+    <section ref="tableSection" class="flex min-h-[420px] flex-1 flex-col">
       <Tabs v-if="result.views.length > 1" :model-value="currentView?.id" class="mb-1.5" @update:model-value="id => showView(String(id))">
         <TabsList variant="line">
           <TabsTrigger v-for="v in result.views" :key="v.id" :value="v.id" class="flex-none">
@@ -77,11 +77,14 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { icon } from '@/components/icons';
 import FilterBar from './FilterBar.vue';
 import DashboardPanel from './DashboardPanel.vue';
-import SummaryChart from './SummaryChart.vue';
+import SummaryChart, { type ChartClick } from './SummaryChart.vue';
+import { toast } from 'vue-sonner';
+import { describe, type ColumnFilter } from '@/core/tableFilter';
 import EventTable from './EventTable.vue';
 import DetailPanel from './DetailPanel.vue';
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable';
 import { starOf } from '@/composables/useStars';
+import { ipInfo } from '@/composables/useIpInfo';
 
 /** Route params: the module and, optionally, one of its views (#/m/logon/sessions), plus query options. */
 const props = defineProps<{ name: string; view?: string; q?: string; from?: number; to?: number; anchor?: number }>();
@@ -89,7 +92,8 @@ const router = useRouter();
 
 const plugin = computed(() => pluginByName.get(props.name) ?? pluginByName.get('showAll')!);
 const detail = shallowRef<{ event: EvtxEvent; extra: RowDetail | undefined } | null>(null);
-const tableRef = ref<{ step: (delta: number) => void; searchFor: (text: string) => void } | null>(null);
+const tableRef = ref<{ step: (delta: number) => void; searchFor: (text: string) => void; applyFilter: (column: string, filter: ColumnFilter) => void } | null>(null);
+const tableSection = ref<HTMLElement | null>(null);
 const initial = computed(() => (props.q || props.from !== undefined || props.to !== undefined || props.anchor !== undefined ? { search: props.q, from: props.from, to: props.to, anchor: props.anchor } : undefined));
 
 // Esc closes the record, unless it is closing a menu or leaving a text field.
@@ -98,10 +102,10 @@ useEventListener('keydown', (e: KeyboardEvent) => {
   if (e.key !== 'Escape' || !detail.value || e.defaultPrevented || target?.closest('input, textarea, [role=dialog], [role=menu]')) return;
   detail.value = null;
 });
-/** Column filters a pivot hands to the view it opens (kept per view, so going back drops them). */
-const preset = shallowRef<{ view: string; filters: Record<string, string> }>();
+/** Column filters a pivot or chart hands to the view it opens (kept per view, so going back drops them). */
+const preset = shallowRef<{ view: string; filters: Record<string, string | ColumnFilter> }>();
 
-function showView(id: string, filters?: Record<string, string>) {
+function showView(id: string, filters?: Record<string, string | ColumnFilter>) {
   preset.value = filters ? { view: id, filters } : undefined;
   const to = { name: 'module', params: { name: plugin.value.name, view: id } };
   // A pivot is a step the analyst may want to go back from; switching tabs is not.
@@ -123,13 +127,31 @@ function setOption(id: string, value: boolean) {
 // Re-analysis happens only when the data or the plugin's own options change.
 const result = computed(() => {
   void eventStore.version.value;
-  return plugin.value.analyze(createContext(eventStore, e => starOf(e)), options.value);
+  return plugin.value.analyze(createContext(eventStore, { starred: starOf, ipInfo }), options.value);
 });
 // Charts without a single data point are left out rather than drawn empty.
 const charts = computed(() =>
-  result.value.charts.filter(c => (c.kind === 'ranking' ? c.items.length > 0 : c.series.some(s => s.ts.length > 0))),
+  result.value.charts.filter(c => {
+    if (c.kind === 'ranking') return c.items.length > 0;
+    if (c.kind === 'calendar') return c.ts.length > 0;
+    if (c.kind === 'graph') return c.nodes.length > 0;
+    return c.series.some(s => s.ts.length > 0);
+  }),
 );
 const revision = computed(() => `${eventStore.version.value}:${JSON.stringify(options.value)}`);
 const currentView = computed(() => result.value.views.find(v => v.id === props.view) ?? result.value.views[0]);
 const filters = computed(() => (preset.value && preset.value.view === currentView.value?.id ? preset.value.filters : undefined));
+
+/** A chart click filters the table under it (or the view the chart describes) and brings it into view. */
+function chartFilter(click: ChartClick) {
+  const view = result.value.views.find(v => v.id === click.view) ?? currentView.value;
+  if (!view) return;
+  const column = click.column ?? view.columns.find(c => c.kind === 'time')?.id;
+  if (!column) return;
+  if (view === currentView.value) tableRef.value?.applyFilter(column, click.filter);
+  else showView(view.id, { [column]: click.filter });
+  const label = view.columns.find(c => c.id === column)?.label ?? column;
+  toast(`Filtered ${view.label}: ${describe(click.filter, label, timeZone.value)}`);
+  tableSection.value?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
 </script>
